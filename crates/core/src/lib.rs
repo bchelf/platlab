@@ -20,43 +20,70 @@ pub fn rects_intersect(a: &Rect, b: &Rect) -> bool {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct Params {
-    // Horizontal
-    pub max_speed: f32, // px/sec
-    pub accel: f32,     // px/sec^2
-    pub friction: f32,  // px/sec^2 (applied when no input, grounded)
+    // Ground movement
+    pub ground_max_speed: f32,
+    pub ground_accel: f32,
+    pub ground_decel: f32,
+    pub ground_friction: f32,
+    pub run_multiplier: f32,
+
+    // Air movement
+    pub air_max_speed: f32,
+    pub air_accel: f32,
+    pub air_decel: f32,
+    pub air_drag: f32,
 
     // Vertical
-    pub gravity_up: f32,   // px/sec^2 (while rising)
-    pub gravity_down: f32, // px/sec^2 (while falling)
-    pub terminal_vel: f32, // px/sec (down)
-    pub jump_vel: f32,     // px/sec (initial)
-    pub jump_cut_mult: f32,// [0..1], clamps rising vy on jump release
+    pub gravity_up: f32,
+    pub gravity_down: f32,
+    pub terminal_velocity: f32,
+    pub fast_fall_multiplier: f32,
+
+    // Jump
+    pub jump_velocity: f32,
+    pub jump_cut_multiplier: f32,
+    pub coyote_time: f32,
+    pub jump_buffer: f32,
 
     // Collision stepping / grounding
-    pub snap_to_ground: f32, // px
-    pub max_step_px: f32,    // px per substep
+    pub snap_to_ground: f32,
+    pub max_step_px: f32,
 
-    // World wrap
-    pub world_w: f32, // px
+    // World
+    pub world_w: f32,
+    // 0 = off, 1 = edge-wrap (pygame legacy), 2 = center-wrap torus (web legacy)
+    pub world_wrap_mode: f32,
 }
 
 impl Default for Params {
     fn default() -> Self {
         Self {
-            max_speed: 260.0,
-            accel: 1800.0,
-            friction: 2600.0,
+            ground_max_speed: 260.0,
+            ground_accel: 1800.0,
+            ground_decel: 2200.0,
+            ground_friction: 2600.0,
+            run_multiplier: 1.35,
+
+            air_max_speed: 220.0,
+            air_accel: 1200.0,
+            air_decel: 900.0,
+            air_drag: 0.0,
 
             gravity_up: 1500.0,
             gravity_down: 2300.0,
-            terminal_vel: 1200.0,
-            jump_vel: 520.0,
-            jump_cut_mult: 0.45,
+            terminal_velocity: 1200.0,
+            fast_fall_multiplier: 1.35,
+
+            jump_velocity: 520.0,
+            jump_cut_multiplier: 0.45,
+            coyote_time: 0.085,
+            jump_buffer: 0.100,
 
             snap_to_ground: 6.0,
             max_step_px: 6.0,
 
             world_w: 960.0,
+            world_wrap_mode: 1.0,
         }
     }
 }
@@ -83,6 +110,8 @@ pub struct State {
     pub h: f32,
 
     pub grounded: u8,
+    pub coyote: f32,
+    pub jump_buffer: f32,
     pub jump_was_down: u8,
 }
 
@@ -141,6 +170,8 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
 
     let left = buttons.contains(Buttons::LEFT);
     let right = buttons.contains(Buttons::RIGHT);
+    let down = buttons.contains(Buttons::DOWN);
+    let run = buttons.contains(Buttons::RUN);
     let jump = buttons.contains(Buttons::JUMP);
 
     let move_dir = (right as i32) - (left as i32);
@@ -153,31 +184,81 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
 
     let was_grounded = s.grounded != 0;
 
-    // Horizontal
+    // Coyote timer
+    if was_grounded {
+        s.coyote = params.coyote_time;
+    } else {
+        s.coyote = (s.coyote - DT).max(0.0);
+    }
+
+    // Jump buffer timer
+    if jump_pressed {
+        s.jump_buffer = params.jump_buffer;
+    } else {
+        s.jump_buffer = (s.jump_buffer - DT).max(0.0);
+    }
+
+    // Horizontal movement
+    let run_mul = if run { params.run_multiplier } else { 1.0 };
+    let (max_speed, accel, decel, friction) = if was_grounded {
+        (
+            params.ground_max_speed * run_mul,
+            params.ground_accel,
+            params.ground_decel,
+            params.ground_friction,
+        )
+    } else {
+        (
+            params.air_max_speed * run_mul,
+            params.air_accel,
+            params.air_decel,
+            0.0,
+        )
+    };
+
     if move_dir != 0 {
-        s.vx += params.accel * DT * (move_dir as f32);
+        let desired_dir = move_dir as f32;
+        let turning = s.vx != 0.0 && sign(s.vx) != desired_dir;
+        let dv = if turning { decel } else { accel } * DT * desired_dir;
+        s.vx += dv;
     } else if was_grounded {
-        let fr = params.friction * DT;
+        let fr = friction * DT;
         if s.vx.abs() <= fr { s.vx = 0.0; }
         else { s.vx -= sign(s.vx) * fr; }
     }
-    s.vx = clamp(s.vx, -params.max_speed, params.max_speed);
 
-    // Jump (only if grounded)
-    if jump_pressed && was_grounded {
-        s.vy = -params.jump_vel;
-        s.grounded = 0;
-        ev.jumped = 1;
+    // Air drag
+    if !was_grounded && params.air_drag > 0.0 {
+        let drag = params.air_drag * DT;
+        if s.vx.abs() <= drag { s.vx = 0.0; }
+        else { s.vx -= sign(s.vx) * drag; }
     }
+
+    s.vx = clamp(s.vx, -max_speed, max_speed);
 
     // Gravity
     let g = if s.vy < 0.0 { params.gravity_up } else { params.gravity_down };
-    s.vy += g * DT;
-    s.vy = clamp(s.vy, -99999.0, params.terminal_vel);
+    let mut g_apply = g;
+    if down && s.vy > 0.0 {
+        g_apply *= params.fast_fall_multiplier;
+    }
+    s.vy += g_apply * DT;
+    s.vy = clamp(s.vy, -5000.0, params.terminal_velocity);
+
+    // Jump execution
+    let can_jump = was_grounded || s.coyote > 0.0;
+    let wants_jump = s.jump_buffer > 0.0;
+    if can_jump && wants_jump {
+        s.vy = -params.jump_velocity;
+        s.grounded = 0;
+        s.coyote = 0.0;
+        s.jump_buffer = 0.0;
+        ev.jumped = 1;
+    }
 
     // Jump cut
     if jump_released && s.vy < 0.0 {
-        let cut_vy = -params.jump_vel * params.jump_cut_mult;
+        let cut_vy = -params.jump_velocity * params.jump_cut_multiplier;
         if s.vy < cut_vy { s.vy = cut_vy; }
     }
 
@@ -241,11 +322,24 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
 
     s.grounded = if now_grounded { 1 } else { 0 };
 
-    // World wrap (torus), based on center
-    let w = params.world_w.max(1.0);
-    let center_x = s.x + 0.5 * s.w;
-    let wrapped = ((center_x % w) + w) % w;
-    s.x = (wrapped - 0.5 * s.w).round();
+    // Optional world wrap (torus), based on center
+    let wrap_mode = params.world_wrap_mode.round() as i32;
+    if wrap_mode == 1 {
+        let w = params.world_w.max(1.0).round();
+        let mut left = s.x.round();
+        let right = left + s.w.round();
+        if left < 0.0 {
+            left = w - s.w.round();
+        } else if right > w {
+            left = 0.0;
+        }
+        s.x = left;
+    } else if wrap_mode == 2 {
+        let w = params.world_w.max(1.0);
+        let center_x = s.x + 0.5 * s.w;
+        let wrapped = ((center_x % w) + w) % w;
+        s.x = (wrapped - 0.5 * s.w).round();
+    }
 
     ev
 }
@@ -286,6 +380,7 @@ mod tests {
         let mut jumped = 0u32;
         let mut landed = 0u32;
         let mut bonked = 0u32;
+        let mut trace_hash = 0xcbf29ce484222325u64;
 
         for frame in 0..180 {
             let mut buttons = Buttons::empty();
@@ -300,16 +395,32 @@ mod tests {
             jumped += ev.jumped as u32;
             landed += ev.landed as u32;
             bonked += ev.bonked as u32;
+
+            for value in [
+                state.x.round() as i64,
+                state.y.round() as i64,
+                state.vx.round() as i64,
+                state.vy.round() as i64,
+                state.grounded as i64,
+            ] {
+                for b in value.to_le_bytes() {
+                    trace_hash ^= b as u64;
+                    trace_hash = trace_hash.wrapping_mul(0x100000001b3);
+                }
+            }
         }
 
-        approx_eq(state.x, 559.0);
+        approx_eq(state.x, 555.0);
         approx_eq(state.y, 436.0);
         approx_eq(state.vx, 0.0);
         approx_eq(state.vy, 0.0);
         assert_eq!(state.grounded, 1);
         assert_eq!(state.jump_was_down, 0);
+        approx_eq(state.coyote, params.coyote_time);
+        approx_eq(state.jump_buffer, 0.0);
         assert_eq!(jumped, 1);
         assert_eq!(landed, 2);
         assert_eq!(bonked, 0);
+        assert_eq!(trace_hash, 0x94db7b2925cfad14);
     }
 }

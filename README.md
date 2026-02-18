@@ -41,6 +41,21 @@ This runs the same 180-frame fixed input sequence against:
 
 and compares a shared deterministic hash of final state/event counters.
 
+## Reference Parity Trace Workflow
+
+1. Use the shared replay spec:
+   - `reference/trace_scenarios/default_trace.json`
+2. Export core trace:
+   - `cargo run -p platlab_core --bin replay -- reference/trace_scenarios/default_trace.json > core_trace.csv`
+3. Export pygame reference trace (no rendering):
+   - `python3 reference/pygame_sandbox/tuner.py --trace-in reference/trace_scenarios/default_trace.json --trace-out py_trace.csv`
+4. Compare:
+   - `python3 scripts/compare_reference_trace.py`
+
+Legacy web reference trace export is available via hash payload:
+- open `reference/js_sandbox/physics-lab.html#trace=<base64-json-spec>`
+- then read CSV from `window.__TRACE_CSV__` (also printed to console).
+
 ## Determinism Notes
 
 - Core tick rate is fixed at 60Hz (`DT = 1/60`).

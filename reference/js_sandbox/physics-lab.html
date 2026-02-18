@@ -411,8 +411,21 @@ Notes:
       }
     }
 
+    function decodeTraceFromHash() {
+      const h = location.hash || "";
+      const m = h.match(/(?:#|&)trace=([A-Za-z0-9+/=]+)/);
+      if (!m) return null;
+      try {
+        const json = decodeURIComponent(escape(atob(m[1])));
+        return JSON.parse(json);
+      } catch {
+        return null;
+      }
+    }
+
     const maybeFromHash = decodeParamsFromHash();
     if (maybeFromHash) params = maybeFromHash;
+    const traceSpec = decodeTraceFromHash();
 
     // -----------------------------
     // DOM wiring: sliders
@@ -853,6 +866,57 @@ player.y = rect.y;
 
 }
 
+function runHeadlessTrace(spec) {
+  params = {...DEFAULT_PARAMS, ...(spec.params || {})};
+  worldW = Math.round(params.world_w);
+  worldH = Math.round(params.world_h);
+
+  if (Array.isArray(spec.world) && spec.world.length > 0) {
+    platforms = spec.world.map(r => ({
+      x: Math.round(Number(r.x)),
+      y: Math.round(Number(r.y)),
+      w: Math.round(Number(r.w)),
+      h: Math.round(Number(r.h)),
+    }));
+    groundY = worldH - 60;
+  } else {
+    ({groundY, platforms} = buildWorldRects(worldW, worldH));
+  }
+
+  const init = spec.initial_state || {};
+  player = makePlayer();
+  player.x = Number(init.x ?? player.x);
+  player.y = Number(init.y ?? player.y);
+  player.vx = Number(init.vx ?? 0);
+  player.vy = Number(init.vy ?? 0);
+  player.grounded = Boolean(init.grounded ?? 0);
+  player.coyote = Number(init.coyote ?? 0);
+  player.jumpBuffer = Number(init.jump_buffer ?? 0);
+  player.jumpWasDown = Boolean(init.jump_was_down ?? 0);
+
+  const frames = Array.isArray(spec.inputs) ? spec.inputs : [];
+  const dt = 1 / 60;
+  const lines = ["frame,x,y,vx,vy,grounded"];
+
+  for (let frame = 0; frame < frames.length; frame++) {
+    const bits = Number(frames[frame]) | 0;
+    input.left = (bits & (1 << 0)) !== 0;
+    input.right = (bits & (1 << 1)) !== 0;
+    input.down = (bits & (1 << 2)) !== 0;
+    input.run = (bits & (1 << 3)) !== 0;
+    input.jump = (bits & (1 << 4)) !== 0;
+
+    simStep(dt);
+    lines.push(
+      `${frame},${player.x},${player.y},${player.vx},${player.vy},${player.grounded ? 1 : 0}`
+    );
+  }
+
+  const csv = lines.join("\n");
+  window.__TRACE_CSV__ = csv;
+  console.log(csv);
+}
+
 
     // -----------------------------
     // Render
@@ -985,7 +1049,12 @@ else {
       requestAnimationFrame(loop);
     }
 
-    requestAnimationFrame(loop);
+    if (traceSpec) {
+      runHeadlessTrace(traceSpec);
+      setStatus("Trace export complete", 1500);
+    } else {
+      requestAnimationFrame(loop);
+    }
 
     // -----------------------------
     // Buttons + preset + JSON
@@ -1083,7 +1152,9 @@ else {
 
     // Keep sliders in sync if you arrive via hash
     syncSlidersFromParams();
-    setStatus(maybeFromHash ? "Loaded params from share link" : "Ready", 1200);
+    if (!traceSpec) {
+      setStatus(maybeFromHash ? "Loaded params from share link" : "Ready", 1200);
+    }
   </script>
 </body>
 </html>

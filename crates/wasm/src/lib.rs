@@ -14,6 +14,7 @@ impl Core {
     pub fn new() -> Core {
         let mut params = Params::default();
         params.world_w = 960.0;
+        params.world_wrap_mode = 2.0;
 
         let mut state = State::default();
         state.x = 80.0;
@@ -57,17 +58,27 @@ impl Core {
                     }
                 };
             }
-            setf!("max_speed", max_speed);
-            setf!("accel", accel);
-            setf!("friction", friction);
+            setf!("ground_max_speed", ground_max_speed);
+            setf!("ground_accel", ground_accel);
+            setf!("ground_decel", ground_decel);
+            setf!("ground_friction", ground_friction);
+            setf!("run_multiplier", run_multiplier);
+            setf!("air_max_speed", air_max_speed);
+            setf!("air_accel", air_accel);
+            setf!("air_decel", air_decel);
+            setf!("air_drag", air_drag);
             setf!("gravity_up", gravity_up);
             setf!("gravity_down", gravity_down);
-            setf!("terminal_vel", terminal_vel);
-            setf!("jump_vel", jump_vel);
-            setf!("jump_cut_mult", jump_cut_mult);
+            setf!("terminal_velocity", terminal_velocity);
+            setf!("fast_fall_multiplier", fast_fall_multiplier);
+            setf!("jump_velocity", jump_velocity);
+            setf!("jump_cut_multiplier", jump_cut_multiplier);
+            setf!("coyote_time", coyote_time);
+            setf!("jump_buffer", jump_buffer);
             setf!("snap_to_ground", snap_to_ground);
             setf!("max_step_px", max_step_px);
             setf!("world_w", world_w);
+            setf!("world_wrap_mode", world_wrap_mode);
         }
     }
 

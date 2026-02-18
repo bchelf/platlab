@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 Single-window Platformer Physics Tuning Sandbox (pygame only)
 
@@ -20,6 +21,7 @@ Run:
   python tuner.py
 """
 
+import argparse
 import json
 import math
 import os
@@ -27,7 +29,56 @@ import sys
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-import pygame
+try:
+    import pygame
+except ModuleNotFoundError:  # trace-export mode can run without pygame installed
+    pygame = None
+
+
+class TraceRect:
+    def __init__(self, x: int, y: int, w: int, h: int):
+        self.x = int(x)
+        self.y = int(y)
+        self.w = int(w)
+        self.h = int(h)
+
+    @property
+    def left(self):
+        return self.x
+
+    @left.setter
+    def left(self, v):
+        self.x = int(v)
+
+    @property
+    def right(self):
+        return self.x + self.w
+
+    @right.setter
+    def right(self, v):
+        self.x = int(v) - self.w
+
+    @property
+    def top(self):
+        return self.y
+
+    @top.setter
+    def top(self, v):
+        self.y = int(v)
+
+    @property
+    def bottom(self):
+        return self.y + self.h
+
+    @bottom.setter
+    def bottom(self, v):
+        self.y = int(v) - self.h
+
+    def colliderect(self, other):
+        return self.x < other.x + other.w and self.x + self.w > other.x and self.y < other.y + other.h and self.y + self.h > other.y
+
+    def copy(self):
+        return TraceRect(self.x, self.y, self.w, self.h)
 
 # -----------------------------
 # Defaults
@@ -125,6 +176,12 @@ def clamp(x: float, lo: float, hi: float) -> float:
 
 def sign(x: float) -> float:
     return -1.0 if x < 0 else (1.0 if x > 0 else 0.0)
+
+
+def make_rect(x: int, y: int, w: int, h: int):
+    if pygame is not None:
+        return pygame.Rect(x, y, w, h)
+    return TraceRect(x, y, w, h)
 
 
 # -----------------------------
@@ -239,9 +296,9 @@ class Player:
 def build_world(world_w: int, world_h: int) -> Tuple[int, List[pygame.Rect]]:
     ground_y = world_h - 60
     plats = [
-        pygame.Rect(0, ground_y, world_w, 60),
-        pygame.Rect(world_w // 2 - 140, ground_y - 140, 280, 18),
-        pygame.Rect(120, ground_y - 240, 240, 18),
+        make_rect(0, ground_y, world_w, 60),
+        make_rect(world_w // 2 - 140, ground_y - 140, 280, 18),
+        make_rect(120, ground_y - 240, 240, 18),
     ]
     return ground_y, plats
 
@@ -271,13 +328,17 @@ def resolve_axis_separated(rect: pygame.Rect, dx: float, dy: float, platforms: L
                 hit_head = True
     return rect, hit_ground, hit_head
 
-def do_sim_step(player: Player, platforms: List[pygame.Rect], params: Dict[str, float], keys: pygame.key.ScancodeWrapper, dt: float):
-    # Inputs
-    left = keys[pygame.K_a]
-    right = keys[pygame.K_d]
-    down = keys[pygame.K_s]
-    run_key = keys[pygame.K_k]
-    jump_key = keys[pygame.K_l]
+def do_sim_step_input(
+    player: Player,
+    platforms: List[pygame.Rect],
+    params: Dict[str, float],
+    left: bool,
+    right: bool,
+    down: bool,
+    run_key: bool,
+    jump_key: bool,
+    dt: float,
+):
 
     move = (1 if right else 0) - (1 if left else 0)
 
@@ -362,7 +423,7 @@ def do_sim_step(player: Player, platforms: List[pygame.Rect], params: Dict[str, 
     # Collision move with substeps
     w = int(round(params["player_w"]))
     h = int(round(params["player_h"]))
-    rect = pygame.Rect(int(round(player.x)), int(round(player.y)), w, h)
+    rect = make_rect(int(round(player.x)), int(round(player.y)), w, h)
 
     max_step = max(1.0, params["max_step_px"])
     total_dx = player.vx * dt
@@ -410,6 +471,19 @@ def do_sim_step(player: Player, platforms: List[pygame.Rect], params: Dict[str, 
 
     player.grounded = grounded
 
+def do_sim_step(player: Player, platforms: List[pygame.Rect], params: Dict[str, float], keys: pygame.key.ScancodeWrapper, dt: float):
+    do_sim_step_input(
+        player,
+        platforms,
+        params,
+        bool(keys[pygame.K_a]),
+        bool(keys[pygame.K_d]),
+        bool(keys[pygame.K_s]),
+        bool(keys[pygame.K_k]),
+        bool(keys[pygame.K_l]),
+        dt,
+    )
+
 
 # -----------------------------
 # Persistence
@@ -431,10 +505,74 @@ def load_params(path: str) -> Dict[str, float]:
     return out
 
 
+def load_trace_spec(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        spec = json.load(f)
+
+    params = dict(DEFAULT_PARAMS)
+    for k, v in spec.get("params", {}).items():
+        if k in params:
+            params[k] = float(v)
+
+    world = []
+    for r in spec.get("world", []):
+        world.append(
+            make_rect(
+                int(round(float(r["x"]))),
+                int(round(float(r["y"]))),
+                int(round(float(r["w"]))),
+                int(round(float(r["h"]))),
+            )
+        )
+
+    init = spec["initial_state"]
+    player = Player(
+        x=float(init["x"]),
+        y=float(init["y"]),
+        vx=float(init.get("vx", 0.0)),
+        vy=float(init.get("vy", 0.0)),
+        grounded=bool(init.get("grounded", 0)),
+        coyote=float(init.get("coyote", 0.0)),
+        jump_buffer=float(init.get("jump_buffer", 0.0)),
+        jump_was_down=bool(init.get("jump_was_down", 0)),
+    )
+    inputs = [int(v) for v in spec.get("inputs", [])]
+    return params, world, player, inputs
+
+
+def run_trace_export(trace_in: str, trace_out: str):
+    params, platforms, player, inputs = load_trace_spec(trace_in)
+    dt = 1.0 / 60.0
+
+    with open(trace_out, "w", encoding="utf-8") as f:
+        f.write("frame,x,y,vx,vy,grounded\n")
+        for frame, bits in enumerate(inputs):
+            left = bool(bits & (1 << 0))
+            right = bool(bits & (1 << 1))
+            down = bool(bits & (1 << 2))
+            run_key = bool(bits & (1 << 3))
+            jump = bool(bits & (1 << 4))
+            do_sim_step_input(player, platforms, params, left, right, down, run_key, jump, dt)
+            f.write(f"{frame},{player.x},{player.y},{player.vx},{player.vy},{1 if player.grounded else 0}\n")
+
+
 # -----------------------------
 # Main
 # -----------------------------
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--trace-in", type=str, default="")
+    parser.add_argument("--trace-out", type=str, default="")
+    args = parser.parse_args()
+    if args.trace_in:
+        out = args.trace_out or "trace.csv"
+        run_trace_export(args.trace_in, out)
+        print(f"Wrote trace CSV: {out}")
+        return
+
+    if pygame is None:
+        raise RuntimeError("pygame is required for interactive mode. Install with: pip install pygame")
+
     pygame.init()
     pygame.display.set_caption("Platformer Physics Tuning Sandbox (Single Window)")
 

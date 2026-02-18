@@ -4,3 +4,5 @@ apps/web/pkg_node/
 .DS_Store
 __pycache__/
 *.pyc
+core_trace.csv
+py_trace.csv

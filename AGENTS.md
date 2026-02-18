@@ -236,6 +236,24 @@ This must report matching hashes for Rust core, Python ctypes (FFI), and WASM (n
 
 ---
 
+# Reference Trace Parity
+
+Use this shared spec and compare core vs legacy pygame reference:
+
+```
+cargo run -p platlab_core --bin replay -- reference/trace_scenarios/default_trace.json > core_trace.csv
+python3 reference/pygame_sandbox/tuner.py --trace-in reference/trace_scenarios/default_trace.json --trace-out py_trace.csv
+python3 scripts/compare_reference_trace.py
+```
+
+Legacy web reference can export a trace from:
+
+`reference/js_sandbox/physics-lab.html#trace=<base64-json>`
+
+and writes CSV to `window.__TRACE_CSV__`.
+
+---
+
 # Long-Term Direction
 
 platlab is intended to:

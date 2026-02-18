@@ -23,17 +23,27 @@ class Rect(C.Structure):
 
 class Params(C.Structure):
     _fields_ = [
-        ("max_speed", C.c_float),
-        ("accel", C.c_float),
-        ("friction", C.c_float),
+        ("ground_max_speed", C.c_float),
+        ("ground_accel", C.c_float),
+        ("ground_decel", C.c_float),
+        ("ground_friction", C.c_float),
+        ("run_multiplier", C.c_float),
+        ("air_max_speed", C.c_float),
+        ("air_accel", C.c_float),
+        ("air_decel", C.c_float),
+        ("air_drag", C.c_float),
         ("gravity_up", C.c_float),
         ("gravity_down", C.c_float),
-        ("terminal_vel", C.c_float),
-        ("jump_vel", C.c_float),
-        ("jump_cut_mult", C.c_float),
+        ("terminal_velocity", C.c_float),
+        ("fast_fall_multiplier", C.c_float),
+        ("jump_velocity", C.c_float),
+        ("jump_cut_multiplier", C.c_float),
+        ("coyote_time", C.c_float),
+        ("jump_buffer", C.c_float),
         ("snap_to_ground", C.c_float),
         ("max_step_px", C.c_float),
         ("world_w", C.c_float),
+        ("world_wrap_mode", C.c_float),
     ]
 
 class State(C.Structure):
@@ -42,6 +52,8 @@ class State(C.Structure):
         ("vx", C.c_float), ("vy", C.c_float),
         ("w", C.c_float), ("h", C.c_float),
         ("grounded", C.c_ubyte),
+        ("coyote", C.c_float),
+        ("jump_buffer", C.c_float),
         ("jump_was_down", C.c_ubyte),
     ]
 
