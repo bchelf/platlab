@@ -1,0 +1,42 @@
+name: Deploy platlab web demo to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Build WASM into apps/web/pkg
+        run: wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
+
+      - name: Upload Pages artifact (apps/web)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+
