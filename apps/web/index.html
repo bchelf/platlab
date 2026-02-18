@@ -1,21 +1,248 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>platlab wasm demo</title>
+  <title>platlab web demo</title>
   <style>
-    html,body{margin:0;height:100%;background:#111;color:#eee;font-family:system-ui;overflow:hidden}
-    .wrap{position:relative;width:100vw;height:100vh}
-    canvas{width:100%;height:100%;display:block}
-    .hud{position:absolute;top:10px;left:10px;font-family:ui-monospace,monospace;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:10px;white-space:pre}
+    :root {
+      --bg: #121418;
+      --panel: #171a20;
+      --panel2: #1f2430;
+      --text: #eceef2;
+      --muted: #aab0bf;
+      --line: #2b313d;
+      --accent: #4a8cff;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      height: 100vh;
+      width: 100vw;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .left {
+      position: relative;
+      background: #0f1114;
+      border-right: 2px solid var(--line);
+      overflow: hidden;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.3;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(4px);
+      max-width: 70ch;
+      pointer-events: none;
+      white-space: pre;
+    }
+
+    .right {
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+    }
+
+    .topbar {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 8px;
+    }
+
+    .title {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button, select {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 10px;
+      font-family: var(--sans);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover, select:hover {
+      border-color: #3a4252;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .status {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 16px;
+    }
+
+    .sliders {
+      padding: 12px 14px 18px 14px;
+      overflow: auto;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .slider {
+      padding: 10px 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #141822;
+      margin-bottom: 10px;
+    }
+
+    .slider-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-family: var(--mono);
+    }
+
+    .slider-name {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .slider-value {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .range-meta {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7f8797;
+      margin-top: 4px;
+    }
+
+    .footer-note {
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #121621;
+      margin-right: 6px;
+    }
+
+    .kbd {
+      font-family: var(--mono);
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      padding: 1px 6px;
+      border-radius: 6px;
+      margin: 0 2px;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <canvas id="c"></canvas>
-    <div class="hud" id="hud"></div>
+  <div class="app">
+    <div class="left">
+      <canvas id="c"></canvas>
+      <div class="hud" id="hud"></div>
+    </div>
+
+    <div class="right">
+      <div class="topbar">
+        <div class="title">Platformer Physics Lab (Rust Core)</div>
+        <div class="controls">
+          <button id="btnReset">Reset</button>
+          <button id="btnRespawn">Respawn</button>
+          <button id="btnPause">Pause</button>
+          <button id="btnStep" disabled>Step</button>
+          <button id="btnSave">Save JSON</button>
+          <button id="btnLoad">Load JSON</button>
+          <button id="btnShare">Copy Share Link</button>
+          <select id="preset">
+            <option value="default">Preset: Default</option>
+            <option value="smb1ish">Preset: SMB1-ish starter</option>
+          </select>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="sliders" id="sliders"></div>
+
+      <div class="footer-note">
+        <span class="pill">Controls</span>
+        <span class="kbd">A</span>/<span class="kbd">D</span> move,
+        <span class="kbd">K</span> run,
+        <span class="kbd">L</span> jump,
+        <span class="kbd">S</span> fast-fall,
+        <span class="kbd">Esc</span> pause
+        <br/>
+        <span class="pill">Note</span> Simulation stays fixed at 60Hz in Rust core.
+      </div>
+    </div>
   </div>
+
   <script type="module" src="./main.js"></script>
 </body>
 </html>

@@ -6,3 +6,4 @@ __pycache__/
 *.pyc
 core_trace.csv
 py_trace.csv
+venv

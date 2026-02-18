@@ -21,10 +21,18 @@ cargo test -p platlab_core
 cargo build -p platlab_ffi --release
 python3 apps/python/run.py
 wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
-python3 -m http.server -d apps/web 8000
+python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`.
+Then open `http://localhost:8000/apps/web/`.
+
+## Python Pygame Tuner (Core-Backed)
+
+This is a local pygame host with reference-style UI controls that calls the Rust core every fixed tick:
+
+```bash
+python3 apps/python/platlab-demo.py
+```
 
 ## Cross-Target Parity Check
 

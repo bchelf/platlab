@@ -93,6 +93,8 @@ impl Core {
         js_sys::Reflect::set(&obj, &"vx".into(), &JsValue::from_f64(self.state.vx as f64)).unwrap();
         js_sys::Reflect::set(&obj, &"vy".into(), &JsValue::from_f64(self.state.vy as f64)).unwrap();
         js_sys::Reflect::set(&obj, &"grounded".into(), &JsValue::from_bool(self.state.grounded != 0)).unwrap();
+        js_sys::Reflect::set(&obj, &"coyote".into(), &JsValue::from_f64(self.state.coyote as f64)).unwrap();
+        js_sys::Reflect::set(&obj, &"jump_buffer".into(), &JsValue::from_f64(self.state.jump_buffer as f64)).unwrap();
         js_sys::Reflect::set(&obj, &"jumped".into(), &JsValue::from_bool(ev.jumped != 0)).unwrap();
         js_sys::Reflect::set(&obj, &"landed".into(), &JsValue::from_bool(ev.landed != 0)).unwrap();
         js_sys::Reflect::set(&obj, &"bonked".into(), &JsValue::from_bool(ev.bonked != 0)).unwrap();

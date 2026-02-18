@@ -121,12 +121,12 @@ wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
 ## Web Demo
 
 ```
-python3 -m http.server -d apps/web 8000
+python3 -m http.server 8000
 ```
 
 Open:
 ```
-http://localhost:8000
+http://localhost:8000/apps/web/
 ```
 
 ---
@@ -219,7 +219,7 @@ cargo test -p platlab_core
 cargo build -p platlab_ffi --release
 python3 apps/python/run.py
 wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
-python3 -m http.server -d apps/web 8000
+python3 -m http.server 8000
 ```
 
 ---
