@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke-and-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install wasm-pack
+        run: |
+          curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Core tests
+        run: cargo test -p platlab_core
+
+      - name: Build native FFI
+        run: cargo build -p platlab_ffi --release
+
+      - name: Run python host demo
+        run: python3 apps/python/run.py
+
+      - name: Build web wasm package
+        run: wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
+
+      - name: Cross-target parity harness
+        run: python3 scripts/parity_harness.py

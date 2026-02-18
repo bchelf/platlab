@@ -1,6 +1,6 @@
 target/
 apps/web/pkg/
+apps/web/pkg_node/
 .DS_Store
 __pycache__/
 *.pyc
-

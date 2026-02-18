@@ -26,6 +26,21 @@ python3 -m http.server -d apps/web 8000
 
 Then open `http://localhost:8000`.
 
+## Cross-Target Parity Check
+
+Run:
+
+```bash
+python3 scripts/parity_harness.py
+```
+
+This runs the same 180-frame fixed input sequence against:
+- Rust core example (`cargo run -p platlab_core --example parity_trace`)
+- Python ctypes host (`platlab_ffi`)
+- WASM wrapper (`wasm-pack --target nodejs` + Node runner)
+
+and compares a shared deterministic hash of final state/event counters.
+
 ## Determinism Notes
 
 - Core tick rate is fixed at 60Hz (`DT = 1/60`).

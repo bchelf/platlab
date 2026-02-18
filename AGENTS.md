@@ -224,6 +224,18 @@ python3 -m http.server -d apps/web 8000
 
 ---
 
+# Parity Harness
+
+Run from repo root:
+
+```
+python3 scripts/parity_harness.py
+```
+
+This must report matching hashes for Rust core, Python ctypes (FFI), and WASM (node runner).
+
+---
+
 # Long-Term Direction
 
 platlab is intended to:
