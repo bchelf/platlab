@@ -1,0 +1,12 @@
+[package]
+name = "platlab_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "platlab_core"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+bitflags = "2"

@@ -1,0 +1,12 @@
+[package]
+name = "platlab_ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "platlab_ffi"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+platlab_core = { path = "../core" }
