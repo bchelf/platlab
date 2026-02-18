@@ -1,0 +1,6 @@
+target/
+apps/web/pkg/
+.DS_Store
+__pycache__/
+*.pyc
+
