@@ -249,3 +249,67 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
 
     ev
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{step, Buttons, Params, Rect, State};
+
+    fn approx_eq(a: f32, b: f32) {
+        let eps = 1e-4;
+        assert!(
+            (a - b).abs() <= eps,
+            "expected {b}, got {a} (diff {})",
+            (a - b).abs()
+        );
+    }
+
+    #[test]
+    fn deterministic_fixed_input_sequence_180_frames() {
+        let mut params = Params::default();
+        params.world_w = 960.0;
+
+        let world = [Rect {
+            x: 0.0,
+            y: 480.0,
+            w: 960.0,
+            h: 60.0,
+        }];
+
+        let mut state = State {
+            x: 80.0,
+            y: 480.0 - 44.0,
+            w: 28.0,
+            h: 44.0,
+            ..State::default()
+        };
+
+        let mut jumped = 0u32;
+        let mut landed = 0u32;
+        let mut bonked = 0u32;
+
+        for frame in 0..180 {
+            let mut buttons = Buttons::empty();
+            if frame < 120 {
+                buttons |= Buttons::RIGHT;
+            }
+            if frame == 10 {
+                buttons |= Buttons::JUMP;
+            }
+
+            let ev = step(&params, &world, &mut state, buttons);
+            jumped += ev.jumped as u32;
+            landed += ev.landed as u32;
+            bonked += ev.bonked as u32;
+        }
+
+        approx_eq(state.x, 559.0);
+        approx_eq(state.y, 436.0);
+        approx_eq(state.vx, 0.0);
+        approx_eq(state.vy, 0.0);
+        assert_eq!(state.grounded, 1);
+        assert_eq!(state.jump_was_down, 0);
+        assert_eq!(jumped, 1);
+        assert_eq!(landed, 2);
+        assert_eq!(bonked, 0);
+    }
+}

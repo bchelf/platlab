@@ -1,0 +1,1089 @@
+<!--
+Platformer Physics Tuning Sandbox (Browser / Canvas / No dependencies)
+Drop this file anywhere on your site (e.g. split.gold/physics-lab.html) and open it.
+
+Controls (game):
+  A/D : left/right
+  S   : down (fast-fall)
+  K   : run
+  L   : jump
+  Esc : pause/resume
+UI:
+  Sliders live-tweak parameters.
+  Presets: Default + SMB1-ish starter.
+  Save/Load JSON.
+  Copy Share Link encodes params into URL hash.
+
+Notes:
+- Fixed-step simulation (sim_hz) with accumulator.
+- Collision is axis-separated, pixel-quantized with substeps like the pygame version.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Platformer Physics Lab</title>
+  <style>
+    :root {
+      --bg: #121418;
+      --panel: #171a20;
+      --panel2: #1f2430;
+      --text: #eceef2;
+      --muted: #aab0bf;
+      --line: #2b313d;
+      --accent: #4a8cff;
+      --good: #46d18c;
+      --warn: #ffcc66;
+      --bad: #ff6b6b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      overflow: hidden;
+    }
+
+    .app {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  height: 100vh;            /* IMPORTANT: pin to viewport */
+  width: 100vw;             /* IMPORTANT: pin to viewport */
+  min-height: 0;
+  min-width: 0;
+}
+
+    .left {
+      position: relative;
+      background: #0f1114;
+      border-right: 2px solid var(--line);
+      overflow: hidden;
+      min-height: 0;
+     min-width: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.3;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(4px);
+      max-width: 70ch;
+      pointer-events: none;
+      white-space: pre;
+    }
+
+    .right {
+        min-height: 0;
+        min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+    }
+
+    .topbar {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 8px;
+    }
+
+    .title {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button, select {
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 10px;
+      font-family: var(--sans);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover, select:hover {
+      border-color: #3a4252;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .status {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      min-height: 16px;
+    }
+
+.sliders {
+  padding: 12px 14px 18px 14px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0; /* critical in flex layouts to allow scrolling */
+}
+    .slider {
+      padding: 10px 10px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #141822;
+      margin-bottom: 10px;
+    }
+
+    .slider-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-family: var(--mono);
+    }
+
+    .slider-name {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .slider-value {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .range-meta {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #7f8797;
+      margin-top: 4px;
+    }
+
+    .footer-note {
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #121621;
+      margin-right: 6px;
+    }
+
+    .kbd {
+      font-family: var(--mono);
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      padding: 1px 6px;
+      border-radius: 6px;
+      margin: 0 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="left">
+      <canvas id="c"></canvas>
+      <div class="hud" id="hud"></div>
+    </div>
+
+    <div class="right">
+      <div class="topbar">
+        <div class="title">Platformer Physics Lab</div>
+        <div class="controls">
+          <button id="btnReset">Reset</button>
+          <button id="btnRespawn">Respawn</button>
+          <button id="btnPause">Pause</button>
+          <button id="btnStep" disabled>Step</button>
+          <button id="btnSave">Save JSON</button>
+          <button id="btnLoad">Load JSON</button>
+          <button id="btnShare">Copy Share Link</button>
+          <select id="preset">
+            <option value="default">Preset: Default</option>
+            <option value="smb1ish">Preset: SMB1-ish starter</option>
+          </select>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="sliders" id="sliders"></div>
+
+      <div class="footer-note">
+        <span class="pill">Controls</span>
+        <span class="kbd">A</span>/<span class="kbd">D</span> move,
+        <span class="kbd">K</span> run,
+        <span class="kbd">L</span> jump,
+        <span class="kbd">S</span> fast-fall,
+        <span class="kbd">Esc</span> pause
+        <br/>
+        <span class="pill">Tip</span> Use fixed <b>sim_hz</b> for consistent feel; use Share Link to persist params.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // -----------------------------
+    // Defaults + Specs
+    // -----------------------------
+    const DEFAULT_PARAMS = {
+  sim_hz: 60.0,
+  render_fps_cap: 120.0,
+
+  world_w: 960.0,
+  world_h: 540.0,
+
+  player_w: 28.0,
+  player_h: 44.0,
+
+  ground_max_speed: 360.0,
+  ground_accel: 3200.0,
+  ground_decel: 3200.0,
+  ground_friction: 3200.0,
+  run_multiplier: 1.47,
+
+  air_max_speed: 295.0,
+  air_accel: 3200.0,
+  air_decel: 4550.0,
+  air_drag: 925.0,
+
+  gravity_up: 5000.0,
+  gravity_down: 5000.0,
+  terminal_velocity: 675.0,
+  fast_fall_multiplier: 1.42,
+
+  jump_velocity: 1200.0,
+  jump_cut_multiplier: 0.5,
+  coyote_time: 0.05,
+  jump_buffer: 0.02,
+
+  snap_to_ground: 1.0,
+  max_step_px: 8.0,
+
+  show_debug: 1.0,
+};
+
+    const PARAM_SPECS = [
+      ["sim_hz", 30, 240, 1, v => v.toFixed(0)],
+      ["render_fps_cap", 30, 240, 1, v => v.toFixed(0)],
+      ["player_w", 10, 60, 1, v => v.toFixed(0)],
+      ["player_h", 20, 80, 1, v => v.toFixed(0)],
+
+      ["ground_max_speed", 50, 2000, 5, v => v.toFixed(0)],
+      ["ground_accel", 0, 12000, 50, v => v.toFixed(0)],
+      ["ground_decel", 0, 12000, 50, v => v.toFixed(0)],
+      ["ground_friction", 0, 20000, 50, v => v.toFixed(0)],
+      ["run_multiplier", 1.0, 2.5, 0.01, v => v.toFixed(2)],
+
+      ["air_max_speed", 0, 2000, 5, v => v.toFixed(0)],
+      ["air_accel", 0, 12000, 50, v => v.toFixed(0)],
+      ["air_decel", 0, 12000, 50, v => v.toFixed(0)],
+      ["air_drag", 0, 8000, 25, v => v.toFixed(0)],
+
+      ["gravity_up", 0, 10000, 50, v => v.toFixed(0)],
+      ["gravity_down", 0, 12000, 50, v => v.toFixed(0)],
+      ["terminal_velocity", 0, 8000, 25, v => v.toFixed(0)],
+      ["fast_fall_multiplier", 1.0, 3.0, 0.01, v => v.toFixed(2)],
+
+      ["jump_velocity", 0, 2000, 10, v => v.toFixed(0)],
+      ["jump_cut_multiplier", 0.05, 1.0, 0.01, v => v.toFixed(2)],
+      ["coyote_time", 0.0, 0.25, 0.005, v => v.toFixed(3)],
+      ["jump_buffer", 0.0, 0.25, 0.005, v => v.toFixed(3)],
+
+      ["snap_to_ground", 0.0, 20.0, 0.5, v => v.toFixed(1)],
+      ["max_step_px", 1.0, 20.0, 0.5, v => v.toFixed(1)],
+
+      ["show_debug", 0.0, 1.0, 1.0, v => v.toFixed(0)],
+    ];
+
+    // A starter "SMB1-ish" preset (matches the pygame port levers; not true NES fixed-point)
+    const PRESET_SMB1ISH = {
+      sim_hz: 60,
+      render_fps_cap: 120,
+      player_w: 28,
+      player_h: 44,
+
+      // "fast" horizontal like SMB-ish (still depends on your tile/world scale)
+      ground_max_speed: 1020,
+      run_multiplier: 1.47,
+      ground_accel: 3200,
+      ground_decel: 3200,
+      ground_friction: 3200,
+
+      air_max_speed: 1020,
+      air_accel: 3200,
+      air_decel: 3200,
+      air_drag: 0,
+
+      gravity_up: 560,
+      gravity_down: 560,
+      terminal_velocity: 360,
+
+      jump_velocity: 240,
+      jump_cut_multiplier: 0.25,
+      coyote_time: 0,
+      jump_buffer: 0,
+
+      snap_to_ground: 1.0,
+      max_step_px: 8.0,
+      show_debug: 1,
+    };
+
+    // -----------------------------
+    // Param state + URL share
+    // -----------------------------
+    let params = {...DEFAULT_PARAMS};
+
+    function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+    function sign(x) { return x < 0 ? -1 : x > 0 ? 1 : 0; }
+
+    function encodeParamsToHash(p) {
+      // Keep it compact: only include keys that differ from defaults.
+      const diff = {};
+      for (const k in DEFAULT_PARAMS) {
+        const dv = DEFAULT_PARAMS[k];
+        const pv = p[k];
+        if (typeof pv === "number" && Math.abs(pv - dv) > 1e-9) diff[k] = pv;
+      }
+      const json = JSON.stringify(diff);
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      return "#p=" + b64;
+    }
+
+    function decodeParamsFromHash() {
+      const h = location.hash || "";
+      const m = h.match(/#p=([A-Za-z0-9+/=]+)/);
+      if (!m) return null;
+      try {
+        const json = decodeURIComponent(escape(atob(m[1])));
+        const diff = JSON.parse(json);
+        const out = {...DEFAULT_PARAMS};
+        for (const k in diff) {
+          if (k in out) out[k] = Number(diff[k]);
+        }
+        return out;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const maybeFromHash = decodeParamsFromHash();
+    if (maybeFromHash) params = maybeFromHash;
+
+    // -----------------------------
+    // DOM wiring: sliders
+    // -----------------------------
+    const slidersEl = document.getElementById("sliders");
+    const statusEl = document.getElementById("status");
+
+    function setStatus(msg, ms=1200) {
+      statusEl.textContent = msg;
+      if (ms > 0) setTimeout(() => { if (statusEl.textContent === msg) statusEl.textContent = ""; }, ms);
+    }
+
+    const sliderInputs = new Map(); // name -> input element
+    const valueSpans = new Map();   // name -> span
+
+    function buildSliders() {
+      slidersEl.innerHTML = "";
+      sliderInputs.clear();
+      valueSpans.clear();
+
+      for (const [name, lo, hi, step, fmt] of PARAM_SPECS) {
+        const card = document.createElement("div");
+        card.className = "slider";
+
+        const head = document.createElement("div");
+        head.className = "slider-head";
+
+        const nm = document.createElement("div");
+        nm.className = "slider-name";
+        nm.textContent = name;
+
+        const val = document.createElement("div");
+        val.className = "slider-value";
+        val.textContent = fmt(params[name]);
+
+        head.appendChild(nm);
+        head.appendChild(val);
+
+        const input = document.createElement("input");
+        input.type = "range";
+        input.min = lo;
+        input.max = hi;
+        input.step = step;
+        input.value = params[name];
+
+        input.addEventListener("input", () => {
+          params[name] = Number(input.value);
+          val.textContent = fmt(params[name]);
+        });
+
+        const meta = document.createElement("div");
+        meta.className = "range-meta";
+        meta.innerHTML = `<span>${fmt(lo)}</span><span>${fmt(hi)}</span>`;
+
+        card.appendChild(head);
+        card.appendChild(input);
+        card.appendChild(meta);
+
+        slidersEl.appendChild(card);
+
+        sliderInputs.set(name, input);
+        valueSpans.set(name, val);
+      }
+    }
+
+    function syncSlidersFromParams() {
+      for (const [name, lo, hi, step, fmt] of PARAM_SPECS) {
+        const input = sliderInputs.get(name);
+        const val = valueSpans.get(name);
+        if (!input || !val) continue;
+        input.value = String(params[name]);
+        val.textContent = fmt(params[name]);
+      }
+    }
+
+    buildSliders();
+
+    // -----------------------------
+    // World + player
+    // -----------------------------
+    function buildWorldRects(worldW, worldH) {
+      const groundY = worldH - 60;
+      const platforms = [
+        {x:0, y:groundY, w:worldW, h:60},
+        {x:Math.floor(worldW/2)-140, y:groundY-140, w:280, h:18},
+        {x:120, y:groundY-240, w:240, h:18},
+      ];
+      return {groundY, platforms};
+    }
+
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+
+    let worldW = Math.round(params.world_w);
+    let worldH = Math.round(params.world_h);
+    let panelW = 0; // canvas is only the world; panel is HTML
+    let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    let lastViewW = 0, lastViewH = 0;
+    let lastTransform = { s: 1, ox: 0, oy: 0, viewW: 1, viewH: 1 };
+
+
+function resizeCanvas() {
+  const left = document.querySelector(".left");
+  const r = left.getBoundingClientRect();
+  const cssW = r.width;
+  const cssH = r.height;
+
+  // If invalid during active resize, don't clobber canvas to 0
+  if (cssW < 50 || cssH < 50) return;
+
+  lastViewW = cssW;
+  lastViewH = cssH;
+
+  canvas.width  = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+
+
+
+let resizePending = false;
+
+window.addEventListener("resize", () => {
+  if (resizePending) return;
+  resizePending = true;
+
+  requestAnimationFrame(() => {
+    resizePending = false;
+    dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    resizeCanvas();
+    draw(); // immediate redraw so it doesn't appear blank during drag
+  });
+});
+
+// initial sizing (now + after layout settles)
+resizeCanvas();
+requestAnimationFrame(resizeCanvas);
+setTimeout(resizeCanvas, 50);
+
+
+    // The world is rendered scaled to fit the left pane
+function getWorldTransform() {
+  const left = document.querySelector(".left");
+  const r = left.getBoundingClientRect();
+  const viewW = r.width;
+  const viewH = r.height;
+
+  // If layout is mid-resize and returns tiny/invalid dims, reuse last good transform
+  if (viewW < 50 || viewH < 50) return lastTransform;
+
+  const sx = viewW / worldW;
+  const sy = viewH / worldH;
+  const s = Math.min(sx, sy);
+
+  const ox = (viewW - worldW * s) * 0.5;
+  const oy = (viewH - worldH * s) * 0.5;
+
+  lastTransform = { s, ox, oy, viewW, viewH };
+  return lastTransform;
+}
+
+
+
+
+    function rectsIntersect(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function resolveAxisSeparated(rect, dx, dy, platforms) {
+      let hitGround = false, hitHead = false;
+
+      // X
+      rect.x += Math.round(dx);
+      for (const p of platforms) {
+        if (rectsIntersect(rect, p)) {
+          if (dx > 0) rect.x = p.x - rect.w;
+          else if (dx < 0) rect.x = p.x + p.w;
+        }
+      }
+
+      // Y
+      rect.y += Math.round(dy);
+      for (const p of platforms) {
+        if (rectsIntersect(rect, p)) {
+          if (dy > 0) { rect.y = p.y - rect.h; hitGround = true; }
+          else if (dy < 0) { rect.y = p.y + p.h; hitHead = true; }
+        }
+      }
+
+      return {rect, hitGround, hitHead};
+    }
+
+    function makePlayer() {
+      const {groundY} = buildWorldRects(worldW, worldH);
+      return {
+  x: 80,
+  y: groundY - params.player_h,
+  vx: 0,
+  vy: 0,
+  grounded: false,
+  coyote: 0,
+  jumpBuffer: 0,
+  jumpWasDown: false,
+
+  // jump/air metrics
+  wasGrounded: false,
+  airTime: 0,           // seconds since leaving ground
+  jumpStartY: 0,        // y at jump start
+  peakY: 0,             // smallest y reached during jump (top of arc)
+  lastJumpHeight: 0,    // px
+  lastAirTime: 0,       // seconds (airtime of last airborne segment)
+};
+
+    }
+
+    let {groundY, platforms} = buildWorldRects(worldW, worldH);
+    let player = makePlayer();
+    player.wasGrounded = player.grounded;
+player.jumpStartY = player.y;
+player.peakY = player.y;
+
+
+    function respawn() {
+      player = makePlayer();
+      setStatus("Respawned");
+    }
+
+    // -----------------------------
+    // Input
+    // -----------------------------
+    const input = {
+      left: false, right: false, down: false, run: false, jump: false,
+      escPressed: false,
+    };
+
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      if (e.code === "KeyA") input.left = true;
+      if (e.code === "KeyD") input.right = true;
+      if (e.code === "KeyS") input.down = true;
+      if (e.code === "KeyK") input.run = true;
+      if (e.code === "KeyL") input.jump = true;
+      if (e.code === "Escape") input.escPressed = true;
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "KeyA") input.left = false;
+      if (e.code === "KeyD") input.right = false;
+      if (e.code === "KeyS") input.down = false;
+      if (e.code === "KeyK") input.run = false;
+      if (e.code === "KeyL") input.jump = false;
+      if (e.code === "Escape") input.escPressed = false;
+    });
+
+    // -----------------------------
+// Simulation step (mirrors pygame logic)
+// -----------------------------
+function simStep(dt) {
+  // Save previous grounded state for transition detection
+  const prevGrounded = player.grounded;
+
+  const move = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+
+  // Timers
+  if (player.grounded) player.coyote = params.coyote_time;
+  else player.coyote = Math.max(0, player.coyote - dt);
+
+  // Jump buffer
+  const jumpPressed = input.jump && !player.jumpWasDown;
+  const jumpReleased = !input.jump && player.jumpWasDown;
+  player.jumpWasDown = input.jump;
+
+  if (jumpPressed) player.jumpBuffer = params.jump_buffer;
+  else player.jumpBuffer = Math.max(0, player.jumpBuffer - dt);
+
+  // Horizontal
+  const runMul = input.run ? params.run_multiplier : 1.0;
+
+  let maxSpeed, accel, decel, friction;
+  if (player.grounded) {
+    maxSpeed = params.ground_max_speed * runMul;
+    accel = params.ground_accel;
+    decel = params.ground_decel;
+    friction = params.ground_friction;
+  } else {
+    maxSpeed = params.air_max_speed * runMul;
+    accel = params.air_accel;
+    decel = params.air_decel;
+    friction = 0;
+  }
+
+  if (move !== 0) {
+    const desiredDir = move;
+    const turning = player.vx !== 0 && sign(player.vx) !== desiredDir;
+    const dv = (turning ? decel : accel) * dt * desiredDir;
+    player.vx += dv;
+  } else {
+    if (player.grounded) {
+      if (Math.abs(player.vx) <= friction * dt) player.vx = 0;
+      else player.vx -= sign(player.vx) * friction * dt;
+    }
+  }
+
+  // Air drag
+  if (!player.grounded && params.air_drag > 0) {
+    const drag = params.air_drag;
+    if (Math.abs(player.vx) <= drag * dt) player.vx = 0;
+    else player.vx -= sign(player.vx) * drag * dt;
+  }
+
+  player.vx = clamp(player.vx, -maxSpeed, maxSpeed);
+
+  // Gravity
+  let g = (player.vy < 0) ? params.gravity_up : params.gravity_down;
+  if (input.down && player.vy > 0) g *= params.fast_fall_multiplier;
+
+  player.vy += g * dt;
+  player.vy = clamp(player.vy, -5000, params.terminal_velocity);
+
+  // Jump execution
+  const canJump = player.grounded || (player.coyote > 0);
+  const wantsJump = player.jumpBuffer > 0;
+
+  if (wantsJump && canJump) {
+    player.vy = -params.jump_velocity;
+    player.grounded = false;
+    player.coyote = 0;
+    player.jumpBuffer = 0;
+
+    // jump metrics
+    player.jumpStartY = player.y;
+    player.peakY = player.y;
+  }
+
+  // Jump cut
+  if (jumpReleased && player.vy < 0) {
+    const cutVy = -params.jump_velocity * params.jump_cut_multiplier;
+    if (player.vy < cutVy) player.vy = cutVy;
+  }
+
+  // Collision move with substeps
+  const rect = {
+    x: Math.round(player.x),
+    y: Math.round(player.y),
+    w: Math.round(params.player_w),
+    h: Math.round(params.player_h)
+  };
+  const maxStep = Math.max(1, params.max_step_px);
+
+  const totalDx = player.vx * dt;
+  const totalDy = player.vy * dt;
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(totalDx), Math.abs(totalDy)) / maxStep));
+  const dx = totalDx / steps;
+  const dy = totalDy / steps;
+
+  let hitGroundAny = false;
+
+  for (let i = 0; i < steps; i++) {
+    const out = resolveAxisSeparated(rect, dx, dy, platforms);
+    rect.x = out.rect.x;
+    rect.y = out.rect.y;
+
+    if (out.hitHead && player.vy < 0) player.vy = 0;
+    if (out.hitGround && player.vy > 0) player.vy = 0;
+
+    hitGroundAny = hitGroundAny || out.hitGround;
+  }
+
+  // Update player from rect
+  player.x = rect.x;
+  player.y = rect.y;
+
+  // Ground snap
+  let grounded = false;
+  const snap = params.snap_to_ground;
+
+  if (snap > 0) {
+    const test = { x: rect.x, y: rect.y + Math.round(snap), w: rect.w, h: rect.h };
+    for (const p of platforms) {
+      if (rectsIntersect(test, p)) {
+        grounded = true;
+        if (rect.y + rect.h <= p.y + Math.round(snap)) {
+          rect.y = p.y - rect.h;
+          player.y = rect.y;
+        }
+        break;
+      }
+    }
+  } else {
+    grounded = hitGroundAny;
+  }
+
+  player.grounded = grounded;
+
+  // --- Airtime / jump height tracking ---
+  if (!player.grounded) {
+    player.airTime += dt;
+    if (player.y < player.peakY) player.peakY = player.y;
+  } else {
+    if (!prevGrounded) {
+      player.lastAirTime = player.airTime;
+      player.airTime = 0;
+
+      const height = Math.max(0, player.jumpStartY - player.peakY);
+      player.lastJumpHeight = height;
+
+      player.jumpStartY = player.y;
+      player.peakY = player.y;
+    } else {
+      player.jumpStartY = player.y;
+      player.peakY = player.y;
+    }
+  }
+
+// --- World wrap (horizontal) - seam-stable torus (no clamping/walls) ---
+const pw = rect.w;
+
+// Wrap when CENTER crosses boundary
+let centerX = rect.x + pw * 0.5;
+
+// modulo wrap into [0, worldW)
+centerX = ((centerX % worldW) + worldW) % worldW;
+
+// place rect so its center matches, allowing it to be partially outside [-pw, worldW]
+rect.x = Math.round(centerX - pw * 0.5);
+
+// If you prefer immediate pop fully to the other side (no partial outside),
+// uncomment ONE of these two lines:
+// if (rect.x < 0) rect.x += worldW;
+// if (rect.x + pw > worldW) rect.x -= worldW;
+
+player.x = rect.x;
+player.y = rect.y;
+
+
+}
+
+
+    // -----------------------------
+    // Render
+    // -----------------------------
+    function draw() {
+  // Reset transform every frame (prevents cumulative translate/scale drift)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+
+      const {s, ox, oy, viewW, viewH} = getWorldTransform();
+
+      // Clear
+      ctx.clearRect(0, 0, viewW, viewH);
+
+      // Background
+      ctx.fillStyle = "#0f1114";
+      ctx.fillRect(0, 0, viewW, viewH);
+
+      // World bounds
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.scale(s, s);
+// sanity border around world
+ctx.strokeStyle = "#ffcc66";
+ctx.lineWidth = 2;
+ctx.strokeRect(0, 0, worldW, worldH);
+
+// sanity crosshair at (0,0)
+ctx.beginPath();
+ctx.moveTo(0, 0); ctx.lineTo(20, 20);
+ctx.moveTo(0, 20); ctx.lineTo(20, 0);
+ctx.stroke();
+
+
+      // World backdrop
+      ctx.fillStyle = "#10131a";
+      ctx.fillRect(0, 0, worldW, worldH);
+
+      // Platforms
+      ctx.fillStyle = "#50555f";
+      for (const p of platforms) {
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      }
+
+      // Player
+      ctx.fillStyle = player.grounded ? "#46d18c" : "#468cda";
+      ctx.beginPath();
+      const r = 6;
+      const px = Math.round(player.x), py = Math.round(player.y);
+      const pw = Math.round(params.player_w), ph = Math.round(params.player_h);
+      // rounded rect
+      ctx.moveTo(px+r, py);
+      ctx.arcTo(px+pw, py, px+pw, py+ph, r);
+      ctx.arcTo(px+pw, py+ph, px, py+ph, r);
+      ctx.arcTo(px, py+ph, px, py, r);
+      ctx.arcTo(px, py, px+pw, py, r);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+
+      // HUD
+      const hud = document.getElementById("hud");
+     if (params.show_debug >= 0.5) {
+  hud.style.display = "block";
+hud.textContent =
+  `x:  ${player.x.toFixed(2).padStart(8)}   y:  ${player.y.toFixed(2).padStart(8)}\n` +
+  `vx: ${player.vx.toFixed(2).padStart(8)}   vy: ${player.vy.toFixed(2).padStart(8)}\n` +
+  `jump_h(last): ${player.lastJumpHeight.toFixed(1).padStart(6)} px   ` +
+  `air_t(now): ${player.airTime.toFixed(3)} s   air_t(last): ${player.lastAirTime.toFixed(3)} s\n` +
+  `grounded: ${player.grounded}   coyote: ${player.coyote.toFixed(3)}   buffer: ${player.jumpBuffer.toFixed(3)}\n` +
+  `A/D move, K run, L jump, S fast-fall | Esc pause`;
+
+}
+else {
+        hud.style.display = "none";
+      }
+    }
+
+    // -----------------------------
+    // Loop (fixed-step)
+    // -----------------------------
+    let paused = false;
+    let stepOnce = false;
+    let accumulator = 0;
+    let lastT = performance.now();
+
+    function loop(now) {
+      // Pause toggle on Esc press edge
+      if (input.escPressed) {
+        // convert to edge by clearing; ok since keyup sets false
+        input.escPressed = false;
+        paused = !paused;
+        document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+        document.getElementById("btnStep").disabled = !paused;
+        setStatus(paused ? "Paused" : "Running", 800);
+      }
+
+      const dtReal = Math.min(0.05, (now - lastT) / 1000);
+      lastT = now;
+
+      // Update world size if params changed (we keep it simple: only rebuild when needed)
+      const newWorldW = Math.round(params.world_w);
+      const newWorldH = Math.round(params.world_h);
+      if (newWorldW !== worldW || newWorldH !== worldH) {
+        worldW = newWorldW; worldH = newWorldH;
+        ({groundY, platforms} = buildWorldRects(worldW, worldH));
+        respawn();
+      }
+
+      const simHz = clamp(params.sim_hz, 30, 240);
+      const simDt = 1 / simHz;
+
+      if (!paused) {
+        accumulator += dtReal;
+        accumulator = Math.min(accumulator, 0.25);
+        while (accumulator >= simDt) {
+          simStep(simDt);
+          accumulator -= simDt;
+        }
+      } else if (stepOnce) {
+        simStep(simDt);
+        stepOnce = false;
+      }
+
+      draw();
+
+      // Render cap: approximate by skipping frames if desired
+      // (requestAnimationFrame is ~60Hz; render_fps_cap mainly matters if you later use OffscreenCanvas)
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+
+    // -----------------------------
+    // Buttons + preset + JSON
+    // -----------------------------
+    document.getElementById("btnReset").addEventListener("click", () => {
+      params = {...DEFAULT_PARAMS};
+      syncSlidersFromParams();
+      respawn();
+      setStatus("Reset to defaults");
+    });
+
+    document.getElementById("btnRespawn").addEventListener("click", () => respawn());
+
+    document.getElementById("btnPause").addEventListener("click", () => {
+      paused = !paused;
+      document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+      document.getElementById("btnStep").disabled = !paused;
+      setStatus(paused ? "Paused" : "Running", 800);
+    });
+
+    document.getElementById("btnStep").addEventListener("click", () => {
+      if (paused) { stepOnce = true; setStatus("Step", 500); }
+    });
+
+    document.getElementById("preset").addEventListener("change", (e) => {
+      const v = e.target.value;
+      if (v === "default") {
+        params = {...DEFAULT_PARAMS};
+        setStatus("Preset: Default");
+      } else if (v === "smb1ish") {
+        params = {...DEFAULT_PARAMS, ...PRESET_SMB1ISH};
+        setStatus("Preset: SMB1-ish starter");
+      }
+      syncSlidersFromParams();
+      respawn();
+    });
+
+    document.getElementById("btnSave").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(params, null, 2)], {type: "application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "params.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus("Downloaded params.json");
+    });
+
+    document.getElementById("btnLoad").addEventListener("click", async () => {
+      const inp = document.createElement("input");
+      inp.type = "file";
+      inp.accept = ".json,application/json";
+      inp.onchange = () => {
+        const file = inp.files && inp.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(String(reader.result));
+            const next = {...DEFAULT_PARAMS};
+            for (const k in data) {
+              if (k in next) next[k] = Number(data[k]);
+            }
+            params = next;
+            syncSlidersFromParams();
+            respawn();
+            setStatus("Loaded params.json");
+          } catch (err) {
+            setStatus("Load failed: " + err, 2000);
+          }
+        };
+        reader.readAsText(file);
+      };
+      inp.click();
+    });
+
+    document.getElementById("btnShare").addEventListener("click", async () => {
+      const hash = encodeParamsToHash(params);
+      const url = location.origin + location.pathname + hash;
+      try {
+        await navigator.clipboard.writeText(url);
+        setStatus("Copied share link");
+      } catch {
+        // fallback
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setStatus("Copied share link");
+      }
+      // also update URL
+      history.replaceState(null, "", hash);
+    });
+
+    // Keep sliders in sync if you arrive via hash
+    syncSlidersFromParams();
+    setStatus(maybeFromHash ? "Loaded params from share link" : "Ready", 1200);
+  </script>
+</body>
+</html>

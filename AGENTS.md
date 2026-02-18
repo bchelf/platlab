@@ -6,6 +6,17 @@ platlab is a cross-platform platformer physics lab with a **single authoritative
 
 ---
 
+# Reference Code
+
+The `reference/` directory contains legacy physics implementations.
+
+These are for comparison only.
+Do not modify them.
+Do not implement new features there.
+All new physics work must occur in `crates/core`.
+
+---
+
 # High-Level Architecture
 
 Repository structure:
@@ -91,7 +102,7 @@ Outputs:
 ## Python Demo
 
 ```
-python apps/python/run.py
+python3 apps/python/run.py
 ```
 
 Python loads the shared library via ctypes.
@@ -110,7 +121,7 @@ wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
 ## Web Demo
 
 ```
-python -m http.server -d apps/web 8000
+python3 -m http.server -d apps/web 8000
 ```
 
 Open:
@@ -133,11 +144,13 @@ When modifying the repo:
 - `crates/ffi` must expose a stable C ABI.
 - Do not break ABI unless necessary.
 - If breaking ABI, document it clearly.
+- Keep `#[repr(C)]` layout parity with Python ctypes definitions.
 
 ### 3. WASM Changes
 - WASM layer is a thin wrapper.
 - Avoid adding physics logic here.
 - Prefer forwarding calls to `platlab_core`.
+- Keep input bit meanings identical to `Buttons` in `crates/core`.
 
 ### 4. Host Apps
 - May handle:
@@ -197,6 +210,20 @@ Agents must not:
 
 ---
 
+# Smoke Test Checklist
+
+Run from repo root:
+
+```
+cargo test -p platlab_core
+cargo build -p platlab_ffi --release
+python3 apps/python/run.py
+wasm-pack build crates/wasm --target web --release --out-dir ../../apps/web/pkg
+python3 -m http.server -d apps/web 8000
+```
+
+---
+
 # Long-Term Direction
 
 platlab is intended to:
@@ -222,4 +249,3 @@ A change is complete when:
 ---
 
 End of instructions.
-
