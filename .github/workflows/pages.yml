@@ -2,7 +2,7 @@ name: Deploy platlab web demo to GitHub Pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "gh-pages"]
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Full build from main (compiles Rust/WASM)
+  deploy-from-main:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,5 +43,26 @@ jobs:
           path: apps/web
 
       - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # Fast deploy from gh-pages (pre-built assets, no compile step)
+  deploy-from-ghpages:
+    if: github.ref == 'refs/heads/gh-pages'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+
+      - name: Upload Pages artifact (root)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
 
