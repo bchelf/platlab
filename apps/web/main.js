@@ -139,6 +139,72 @@ function buildWorldRects(worldW, worldH) {
   const ghostTrail = [];
   const GHOST_MAX = 120;
 
+  // Auto-play state
+  const auto = {
+    enabled: true,
+    dir: 1,
+    jumpTimer: 60,
+    jumpHoldLeft: 0,
+    sprint: false,
+    tick: 0,
+  };
+
+  function autoPlayStep() {
+    if (!auto.enabled || !st) return;
+    auto.tick++;
+
+    // Reverse near world edges
+    if (st.x > worldW - 100 && auto.dir > 0) auto.dir = -1;
+    if (st.x < 100 && auto.dir < 0) auto.dir = 1;
+
+    input.left = auto.dir < 0;
+    input.right = auto.dir > 0;
+
+    // Jump countdown
+    if (auto.jumpTimer > 0) auto.jumpTimer--;
+
+    // Start a new jump when grounded and timer expired
+    if (auto.jumpTimer <= 0 && st.grounded && auto.jumpHoldLeft <= 0) {
+      const durations = [6, 10, 18, 30, 30]; // vary hold for short/full jumps
+      auto.jumpHoldLeft = durations[Math.floor(Math.random() * durations.length)];
+      auto.jumpTimer = 40 + Math.floor(Math.random() * 80);
+    }
+
+    // Hold or release jump
+    if (auto.jumpHoldLeft > 0) {
+      input.jump = true;
+      auto.jumpHoldLeft--;
+    } else {
+      input.jump = false;
+    }
+
+    // Sprint in phases (~2s on, ~2s off)
+    auto.sprint = (auto.tick % 240) < 120;
+    input.run = auto.sprint;
+
+    // Occasional fast-fall when descending
+    input.down = !st.grounded && st.vy > 100 && (auto.tick % 200) < 25;
+  }
+
+  function setAutoEnabled(on) {
+    auto.enabled = on;
+    const btn = document.getElementById("btnAuto");
+    if (on) {
+      btn.textContent = "AUTO";
+      btn.classList.add("active");
+    } else {
+      btn.textContent = "MANUAL";
+      btn.classList.remove("active");
+      input.left = false; input.right = false;
+      input.down = false; input.run = false; input.jump = false;
+    }
+    const hint = document.createElement("span");
+    hint.className = "shortcut";
+    hint.textContent = "Tab";
+    btn.appendChild(hint);
+    setStatus(on ? "Auto-play on" : "Manual control", 800);
+  }
+
   // Motion graph
   const motionGraph = new MotionGraph(document.getElementById("graph"));
   motionGraph.setGroundY(groundY);
@@ -493,6 +559,56 @@ function buildWorldRects(worldW, worldH) {
     } else {
       hud.style.display = "none";
     }
+
+    // Input indicator (screen-space, bottom-right)
+    drawInputIndicator(vw, vh);
+  }
+
+  function drawInputIndicator(vw, vh) {
+    const btnW = 28, btnH = 22, gap = 4, pad = 12;
+    const labels = [
+      { key: "left",  txt: "\u25c0", active: input.left },
+      { key: "down",  txt: "\u25bc", active: input.down },
+      { key: "right", txt: "\u25b6", active: input.right },
+    ];
+    const actions = [
+      { key: "run",  txt: "RUN",  active: input.run },
+      { key: "jump", txt: "JMP",  active: input.jump },
+    ];
+
+    const totalW = labels.length * (btnW + gap) + gap * 2 + actions.length * (36 + gap);
+    const bx = vw - totalW - pad;
+    const by = vh - btnH - pad;
+
+    ctx.font = "bold 10px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    let x = bx;
+    for (const b of labels) {
+      ctx.fillStyle = b.active ? "rgba(74, 140, 255, 0.85)" : "rgba(255,255,255,0.08)";
+      ctx.beginPath();
+      ctx.roundRect(x, by, btnW, btnH, 4);
+      ctx.fill();
+      ctx.fillStyle = b.active ? "#fff" : "rgba(255,255,255,0.25)";
+      ctx.fillText(b.txt, x + btnW / 2, by + btnH / 2);
+      x += btnW + gap;
+    }
+
+    x += gap * 2;
+    for (const b of actions) {
+      const w = 36;
+      const color = b.key === "jump"
+        ? (b.active ? "rgba(70, 209, 140, 0.85)" : "rgba(255,255,255,0.08)")
+        : (b.active ? "rgba(255, 200, 60, 0.85)" : "rgba(255,255,255,0.08)");
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(x, by, w, btnH, 4);
+      ctx.fill();
+      ctx.fillStyle = b.active ? "#fff" : "rgba(255,255,255,0.25)";
+      ctx.fillText(b.txt, x + w / 2, by + btnH / 2);
+      x += w + gap;
+    }
   }
 
   // ── Frame loop ─────────────────────────────────────────
@@ -513,6 +629,7 @@ function buildWorldRects(worldW, worldH) {
       rebuildWorld();
 
     applyCoreParams();
+    if (auto.enabled) autoPlayStep();
 
     if (!paused) {
       acc += dtReal;
@@ -546,15 +663,18 @@ function buildWorldRects(worldW, worldH) {
 
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
+    if (e.code === "Tab") { e.preventDefault(); setAutoEnabled(!auto.enabled); return; }
+    if (e.code === "Escape") { input.escPressed = true; return; }
+    if (auto.enabled) return; // movement keys only in manual mode
     if (e.code === "KeyA") input.left = true;
     if (e.code === "KeyD") input.right = true;
     if (e.code === "KeyS") input.down = true;
     if (e.code === "KeyK") input.run = true;
     if (e.code === "KeyL") input.jump = true;
-    if (e.code === "Escape") input.escPressed = true;
   });
 
   window.addEventListener("keyup", (e) => {
+    if (auto.enabled) return;
     if (e.code === "KeyA") input.left = false;
     if (e.code === "KeyD") input.right = false;
     if (e.code === "KeyS") input.down = false;
@@ -649,6 +769,9 @@ function buildWorldRects(worldW, worldH) {
     const collapsed = body.classList.toggle("collapsed");
     chevron.textContent = collapsed ? "\u25b8" : "\u25be";
   });
+
+  // Auto-play toggle
+  document.getElementById("btnAuto").addEventListener("click", () => setAutoEnabled(!auto.enabled));
 
   // Graph mode toggle
   document.getElementById("graphModes").addEventListener("click", (e) => {
