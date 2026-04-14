@@ -1,7 +1,7 @@
 import init, { Core } from "./pkg/platlab_wasm.js";
-import { PRESETS } from "./presets.js";
-import { FEEL_GROUPS, readFeelControl, writeFeelControl } from "./feel-mapping.js";
-import { MotionGraph } from "./motion-graph.js";
+import { PRESETS } from "./presets.js?v=1776128843";
+import { FEEL_GROUPS, readFeelControl, writeFeelControl } from "./feel-mapping.js?v=1776128843";
+import { MotionGraph } from "./motion-graph.js?v=1776128843";
 
 const LEFT = 1 << 0, RIGHT = 1 << 1, DOWN = 1 << 2, RUN = 1 << 3, JUMP = 1 << 4;
 const FIXED_DT = 1 / 60;
