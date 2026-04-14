@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>platlab web demo</title>
+  <title>platlab – Platformer Physics Lab</title>
   <style>
     :root {
       --bg: #121418;
@@ -13,8 +13,12 @@
       --muted: #aab0bf;
       --line: #2b313d;
       --accent: #4a8cff;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      --green: #46d18c;
+      --orange: #e8964a;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+      --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+        sans-serif;
     }
 
     html, body {
@@ -26,6 +30,8 @@
       overflow: hidden;
     }
 
+    /* ── Main layout ────────────────────────────────────── */
+
     .app {
       display: grid;
       grid-template-columns: 1fr 420px;
@@ -35,16 +41,25 @@
       min-width: 0;
     }
 
+    /* ── Left column: simulation + graph ──────────────── */
+
     .left {
-      position: relative;
+      display: flex;
+      flex-direction: column;
       background: #0f1114;
       border-right: 2px solid var(--line);
-      overflow: hidden;
       min-height: 0;
       min-width: 0;
     }
 
-    canvas {
+    .sim-pane {
+      flex: 2;
+      position: relative;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .sim-pane canvas {
       display: block;
       width: 100%;
       height: 100%;
@@ -52,24 +67,123 @@
       image-rendering: crisp-edges;
     }
 
+    .auto-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 2;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.5);
+      color: var(--muted);
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      user-select: none;
+    }
+
+    .auto-toggle:hover { border-color: rgba(255,255,255,0.3); }
+
+    .auto-toggle.active {
+      background: rgba(74, 140, 255, 0.25);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .auto-toggle .shortcut {
+      font-size: 9px;
+      opacity: 0.5;
+      margin-left: 4px;
+    }
+
     .hud {
       position: absolute;
       top: 10px;
       left: 10px;
       font-family: var(--mono);
-      font-size: 13px;
+      font-size: 12px;
       line-height: 1.3;
       padding: 8px 10px;
-      border-radius: 10px;
-      background: rgba(0,0,0,0.25);
+      border-radius: 8px;
+      background: rgba(0,0,0,0.4);
       border: 1px solid rgba(255,255,255,0.08);
       backdrop-filter: blur(4px);
-      max-width: 70ch;
+      max-width: 60ch;
       pointer-events: none;
       white-space: pre;
     }
 
-    .right {
+    /* ── Motion graph pane ───────────────────────────── */
+
+    .graph-pane {
+      flex: 1;
+      min-height: 120px;
+      max-height: 280px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .graph-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .graph-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .graph-modes {
+      display: flex;
+      gap: 2px;
+      background: var(--panel2);
+      border-radius: 6px;
+      padding: 2px;
+    }
+
+    .graph-mode {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--sans);
+    }
+
+    .graph-mode:hover {
+      color: var(--text);
+    }
+
+    .graph-mode.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .graph-pane canvas {
+      display: block;
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Right panel ─────────────────────────────────── */
+
+    .panel {
       min-height: 0;
       min-width: 0;
       display: flex;
@@ -77,168 +191,344 @@
       background: var(--panel);
     }
 
-    .topbar {
+    .panel-header {
       padding: 12px 14px;
       border-bottom: 1px solid var(--line);
-      display: grid;
-      gap: 8px;
+      flex-shrink: 0;
     }
 
     .title {
       font-weight: 700;
-      font-size: 16px;
+      font-size: 15px;
       letter-spacing: 0.2px;
+      margin-bottom: 10px;
     }
 
-    .controls {
+    .toolbar {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .io-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
     }
 
     button, select {
       background: var(--panel2);
       color: var(--text);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 10px 10px;
+      border-radius: 8px;
+      padding: 7px 8px;
       font-family: var(--sans);
-      font-size: 13px;
+      font-size: 12px;
       cursor: pointer;
     }
 
-    button:hover, select:hover {
-      border-color: #3a4252;
-    }
-
-    button:active {
-      transform: translateY(1px);
-    }
-
-    button[disabled] {
-      opacity: 0.5;
-      cursor: default;
-    }
+    button:hover, select:hover { border-color: #3a4252; }
+    button:active { transform: translateY(1px); }
+    button[disabled] { opacity: 0.5; cursor: default; }
 
     .status {
       font-family: var(--mono);
-      font-size: 12px;
+      font-size: 11px;
       color: var(--muted);
-      min-height: 16px;
+      min-height: 14px;
+      margin-top: 6px;
     }
 
-    .sliders {
-      padding: 12px 14px 18px 14px;
-      overflow: auto;
+    /* ── Scrollable panel content ─────────────────────── */
+
+    .panel-scroll {
+      overflow-y: auto;
       flex: 1;
       min-height: 0;
+      padding: 10px 14px 18px 14px;
     }
 
-    .slider {
-      padding: 10px 10px;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: #141822;
-      margin-bottom: 10px;
-    }
+    /* ── Presets ──────────────────────────────────────── */
 
-    .slider-head {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: baseline;
-      gap: 10px;
+    .presets-section { margin-bottom: 14px; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       margin-bottom: 8px;
-      font-family: var(--mono);
     }
 
-    .slider-name {
+    .presets-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .preset-btn {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 8px 6px;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s;
+    }
+
+    .preset-btn:hover { border-color: #3a4252; }
+
+    .preset-btn.active {
+      border-color: var(--accent);
+      background: rgba(74, 140, 255, 0.08);
+    }
+
+    .preset-name {
       font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .preset-desc {
+      font-size: 10px;
+      color: var(--muted);
+      line-height: 1.2;
+    }
+
+    /* ── Feel control groups ──────────────────────────── */
+
+    .feel-group {
+      margin-bottom: 10px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #141822;
+      overflow: hidden;
+    }
+
+    .feel-group-header {
+      padding: 10px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .feel-group-header:hover { background: rgba(255,255,255,0.02); }
+
+    .feel-group-chevron {
+      font-size: 10px;
+      color: var(--muted);
+      transition: transform 0.15s;
+    }
+
+    .feel-group.collapsed .feel-group-chevron { transform: rotate(-90deg); }
+    .feel-group.collapsed .feel-group-body { display: none; }
+
+    .feel-group-body { padding: 2px 12px 10px; }
+
+    /* ── Individual feel control ──────────────────────── */
+
+    .feel-control { margin-bottom: 10px; }
+    .feel-control:last-child { margin-bottom: 0; }
+
+    .feel-control-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 1px;
+    }
+
+    .feel-control-label {
+      font-size: 12px;
+      font-weight: 500;
       color: var(--text);
     }
 
-    .slider-value {
-      font-size: 12px;
+    .feel-control-value {
+      font-family: var(--mono);
+      font-size: 11px;
       color: var(--muted);
+    }
+
+    .feel-control-help {
+      font-size: 10px;
+      color: #6b7385;
+      margin-bottom: 4px;
+      line-height: 1.3;
     }
 
     input[type="range"] {
       width: 100%;
       accent-color: var(--accent);
+      margin: 0;
     }
+
+    /* ── Advanced section ─────────────────────────────── */
+
+    .advanced-section {
+      margin-top: 6px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #141822;
+      overflow: hidden;
+    }
+
+    .advanced-toggle {
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .advanced-toggle:hover { background: rgba(255,255,255,0.02); }
+
+    .advanced-toggle .chevron {
+      font-size: 10px;
+      transition: transform 0.15s;
+    }
+
+    .advanced-body {
+      padding: 8px 12px 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .advanced-body.collapsed { display: none; }
+
+    .raw-slider { margin-bottom: 8px; }
+    .raw-slider:last-child { margin-bottom: 0; }
+
+    .raw-slider-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-family: var(--mono);
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+
+    .raw-slider-name { color: var(--muted); }
+    .raw-slider-value { color: #6b7385; }
 
     .range-meta {
       display: flex;
       justify-content: space-between;
       font-family: var(--mono);
-      font-size: 11px;
-      color: #7f8797;
-      margin-top: 4px;
+      font-size: 10px;
+      color: #5a6172;
+      margin-top: 1px;
     }
 
-    .footer-note {
-      padding: 12px 14px;
+    /* ── Panel footer ────────────────────────────────── */
+
+    .panel-footer {
+      padding: 10px 14px;
       border-top: 1px solid var(--line);
-      font-family: var(--mono);
-      font-size: 12px;
+      font-size: 11px;
       color: var(--muted);
+      flex-shrink: 0;
+      line-height: 1.5;
     }
 
     .pill {
       display: inline-block;
-      padding: 2px 8px;
+      padding: 1px 7px;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: #121621;
-      margin-right: 6px;
+      margin-right: 4px;
+      font-size: 10px;
     }
 
     .kbd {
       font-family: var(--mono);
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(255,255,255,0.06);
-      padding: 1px 6px;
-      border-radius: 6px;
-      margin: 0 2px;
+      padding: 0px 5px;
+      border-radius: 4px;
+      margin: 0 1px;
+      font-size: 11px;
     }
   </style>
 </head>
 <body>
   <div class="app">
+    <!-- Left: simulation + motion graph -->
     <div class="left">
-      <canvas id="c"></canvas>
-      <div class="hud" id="hud"></div>
+      <div class="sim-pane">
+        <canvas id="c"></canvas>
+        <div class="hud" id="hud"></div>
+        <button class="auto-toggle active" id="btnAuto">AUTO<span class="shortcut">Tab</span></button>
+      </div>
+      <div class="graph-pane">
+        <div class="graph-toolbar">
+          <span class="graph-title">Motion</span>
+          <div class="graph-modes" id="graphModes">
+            <button class="graph-mode" data-mode="position">Height</button>
+            <button class="graph-mode" data-mode="velocity">Velocity</button>
+            <button class="graph-mode active" data-mode="both">Both</button>
+          </div>
+        </div>
+        <canvas id="graph"></canvas>
+      </div>
     </div>
 
-    <div class="right">
-      <div class="topbar">
-        <div class="title">Platformer Physics Lab (Rust Core)</div>
-        <div class="controls">
+    <!-- Right: controls panel -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="title">Platformer Physics Lab</div>
+        <div class="toolbar">
           <button id="btnReset">Reset</button>
           <button id="btnRespawn">Respawn</button>
           <button id="btnPause">Pause</button>
           <button id="btnStep" disabled>Step</button>
-          <button id="btnSave">Save JSON</button>
-          <button id="btnLoad">Load JSON</button>
-          <button id="btnShare">Copy Share Link</button>
-          <select id="preset">
-            <option value="default">Preset: Default</option>
-            <option value="smb1ish">Preset: SMB1-ish starter</option>
-          </select>
+        </div>
+        <div class="io-bar">
+          <button id="btnSave">Save</button>
+          <button id="btnLoad">Load</button>
+          <button id="btnShare">Share Link</button>
         </div>
         <div class="status" id="status"></div>
       </div>
 
-      <div class="sliders" id="sliders"></div>
+      <div class="panel-scroll" id="panelScroll">
+        <!-- Presets -->
+        <div class="presets-section">
+          <div class="section-label">Presets</div>
+          <div class="presets-grid" id="presets"></div>
+        </div>
 
-      <div class="footer-note">
+        <!-- Feel controls (injected by JS) -->
+        <div id="feelControls"></div>
+
+        <!-- Advanced raw parameters -->
+        <div class="advanced-section">
+          <div class="advanced-toggle" id="advancedToggle">
+            <span>Advanced Parameters</span>
+            <span class="chevron">&#x25b8;</span>
+          </div>
+          <div class="advanced-body collapsed" id="advancedBody"></div>
+        </div>
+      </div>
+
+      <div class="panel-footer">
         <span class="pill">Controls</span>
-        <span class="kbd">A</span>/<span class="kbd">D</span> move,
-        <span class="kbd">K</span> run,
-        <span class="kbd">L</span> jump,
-        <span class="kbd">S</span> fast-fall,
+        <span class="kbd">A</span>/<span class="kbd">D</span> move
+        <span class="kbd">K</span> run
+        <span class="kbd">L</span> jump
+        <span class="kbd">S</span> fast-fall
         <span class="kbd">Esc</span> pause
-        <br/>
-        <span class="pill">Note</span> Simulation stays fixed at 60Hz in Rust core.
+        <span class="kbd">Tab</span> auto/manual
       </div>
     </div>
   </div>
