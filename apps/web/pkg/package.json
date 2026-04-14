@@ -1,0 +1,15 @@
+{
+  "name": "platlab_wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "platlab_wasm_bg.wasm",
+    "platlab_wasm.js",
+    "platlab_wasm.d.ts"
+  ],
+  "main": "platlab_wasm.js",
+  "types": "platlab_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

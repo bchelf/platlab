@@ -97,8 +97,8 @@ function buildWorldRects(worldW, worldH) {
     groundY,
     platforms: [
       { x: 0, y: groundY, w: worldW, h: 60 },
-      { x: Math.floor(worldW / 2) - 140, y: groundY - 140, w: 280, h: 18 },
-      { x: 120, y: groundY - 240, w: 240, h: 18 },
+      { x: Math.floor(worldW * 0.5), y: groundY - 140, w: 186, h: 18 },
+      { x: Math.floor(worldW * 0.17), y: groundY - 240, w: 160, h: 18 },
     ],
   };
 }
