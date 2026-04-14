@@ -152,19 +152,22 @@ function buildWorldRects(worldW, worldH) {
   function autoPlayStep() {
     if (!auto.enabled || !st) return;
     auto.tick++;
+    const grounded = !!st.grounded;
 
-    // Reverse near world edges
-    if (st.x > worldW - 100 && auto.dir > 0) auto.dir = -1;
-    if (st.x < 100 && auto.dir < 0) auto.dir = 1;
+    // Only change direction when grounded — commit to direction during jumps
+    if (grounded) {
+      if (st.x > worldW - 100 && auto.dir > 0) auto.dir = -1;
+      if (st.x < 100 && auto.dir < 0) auto.dir = 1;
+    }
 
     input.left = auto.dir < 0;
     input.right = auto.dir > 0;
 
-    // Jump countdown
-    if (auto.jumpTimer > 0) auto.jumpTimer--;
+    // Jump countdown (only ticks while grounded)
+    if (grounded && auto.jumpTimer > 0) auto.jumpTimer--;
 
     // Start a new jump when grounded and timer expired
-    if (auto.jumpTimer <= 0 && st.grounded && auto.jumpHoldLeft <= 0) {
+    if (auto.jumpTimer <= 0 && grounded && auto.jumpHoldLeft <= 0) {
       const durations = [6, 10, 18, 30, 30]; // vary hold for short/full jumps
       auto.jumpHoldLeft = durations[Math.floor(Math.random() * durations.length)];
       auto.jumpTimer = 40 + Math.floor(Math.random() * 80);
@@ -183,7 +186,7 @@ function buildWorldRects(worldW, worldH) {
     input.run = auto.sprint;
 
     // Occasional fast-fall when descending
-    input.down = !st.grounded && st.vy > 100 && (auto.tick % 200) < 25;
+    input.down = !grounded && st.vy > 100 && (auto.tick % 200) < 25;
   }
 
   function setAutoEnabled(on) {
