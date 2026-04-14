@@ -67,6 +67,39 @@
       image-rendering: crisp-edges;
     }
 
+    .auto-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 2;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(0,0,0,0.5);
+      color: var(--muted);
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      user-select: none;
+    }
+
+    .auto-toggle:hover { border-color: rgba(255,255,255,0.3); }
+
+    .auto-toggle.active {
+      background: rgba(74, 140, 255, 0.25);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .auto-toggle .shortcut {
+      font-size: 9px;
+      opacity: 0.5;
+      margin-left: 4px;
+    }
+
     .hud {
       position: absolute;
       top: 10px;
@@ -435,6 +468,7 @@
       <div class="sim-pane">
         <canvas id="c"></canvas>
         <div class="hud" id="hud"></div>
+        <button class="auto-toggle active" id="btnAuto">AUTO<span class="shortcut">Tab</span></button>
       </div>
       <div class="graph-pane">
         <div class="graph-toolbar">
@@ -494,6 +528,7 @@
         <span class="kbd">L</span> jump
         <span class="kbd">S</span> fast-fall
         <span class="kbd">Esc</span> pause
+        <span class="kbd">Tab</span> auto/manual
       </div>
     </div>
   </div>
