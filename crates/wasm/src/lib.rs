@@ -79,6 +79,14 @@ impl Core {
             setf!("max_step_px", max_step_px);
             setf!("world_w", world_w);
             setf!("world_wrap_mode", world_wrap_mode);
+            setf!("gravity_well_enabled", gravity_well_enabled);
+            setf!("well_x", well_x);
+            setf!("well_y", well_y);
+            setf!("well_influence_radius", well_influence_radius);
+            setf!("well_core_radius", well_core_radius);
+            setf!("well_accel", well_accel);
+            setf!("well_max_speed", well_max_speed);
+            setf!("well_radial_damping", well_radial_damping);
         }
     }
 
@@ -98,7 +106,35 @@ impl Core {
         js_sys::Reflect::set(&obj, &"jumped".into(), &JsValue::from_bool(ev.jumped != 0)).unwrap();
         js_sys::Reflect::set(&obj, &"landed".into(), &JsValue::from_bool(ev.landed != 0)).unwrap();
         js_sys::Reflect::set(&obj, &"bonked".into(), &JsValue::from_bool(ev.bonked != 0)).unwrap();
+        js_sys::Reflect::set(
+            &obj,
+            &"gravity_active".into(),
+            &JsValue::from_bool(self.state.gravity_active != 0),
+        )
+        .unwrap();
+        js_sys::Reflect::set(
+            &obj,
+            &"gravity_core_death".into(),
+            &JsValue::from_bool(ev.gravity_core_death != 0),
+        )
+        .unwrap();
 
         JsValue::from(obj)
+    }
+
+    /// Predict a short future trajectory without mutating live gameplay state.
+    /// Clones the current state and steps the authoritative core forward
+    /// `ticks` times holding `input_bits` constant, returning packed
+    /// [x0,y0, x1,y1, ...] points for host-side rendering only.
+    pub fn predict(&self, input_bits: u8, ticks: u32) -> Vec<f32> {
+        let mut sim_state = self.state;
+        let mut out = Vec::with_capacity(ticks as usize * 2);
+        for _ in 0..ticks {
+            let buttons = Buttons::from_bits_truncate(input_bits);
+            platlab_core::step(&self.params, &self.world, &mut sim_state, buttons);
+            out.push(sim_state.x);
+            out.push(sim_state.y);
+        }
+        out
     }
 }

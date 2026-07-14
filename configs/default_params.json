@@ -7,6 +7,7 @@
   "fast_fall_multiplier": 1.42,
   "gravity_down": 5000,
   "gravity_up": 5000,
+  "gravity_well_enabled": 1.0,
   "ground_accel": 3200.0,
   "ground_decel": 3200.0,
   "ground_friction": 3200.0,
@@ -23,6 +24,13 @@
   "sim_hz": 60.0,
   "snap_to_ground": 1.0,
   "terminal_velocity": 675,
+  "well_accel": 4200.0,
+  "well_core_radius": 30.0,
+  "well_influence_radius": 150.0,
+  "well_max_speed": 900.0,
+  "well_radial_damping": 0.0,
+  "well_x": 560.0,
+  "well_y": 260.0,
   "world_h": 540.0,
   "world_w": 960.0
 }

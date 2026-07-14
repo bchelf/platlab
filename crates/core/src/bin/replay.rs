@@ -118,6 +118,14 @@ fn parse_params(src: &str) -> Params {
         max_step_px: number(p, "max_step_px", Some(6.0)),
         world_w: number(p, "world_w", Some(960.0)),
         world_wrap_mode: number(p, "world_wrap_mode", Some(1.0)),
+        gravity_well_enabled: number(p, "gravity_well_enabled", Some(0.0)),
+        well_x: number(p, "well_x", Some(480.0)),
+        well_y: number(p, "well_y", Some(300.0)),
+        well_influence_radius: number(p, "well_influence_radius", Some(220.0)),
+        well_core_radius: number(p, "well_core_radius", Some(34.0)),
+        well_accel: number(p, "well_accel", Some(2600.0)),
+        well_max_speed: number(p, "well_max_speed", Some(900.0)),
+        well_radial_damping: number(p, "well_radial_damping", Some(0.0)),
     }
 }
 
@@ -134,6 +142,8 @@ fn parse_state(src: &str) -> State {
         coyote: number(s, "coyote", Some(0.0)),
         jump_buffer: number(s, "jump_buffer", Some(0.0)),
         jump_was_down: integer(s, "jump_was_down", Some(0)) as u8,
+        gravity_active: 0,
+        well_boosted: 0,
     }
 }
 

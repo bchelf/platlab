@@ -19,6 +19,10 @@ let DEFAULT_PARAMS = {
   coyote_time: 0.085, jump_buffer: 0.1,
   snap_to_ground: 6, max_step_px: 6,
   show_debug: 1, world_wrap_mode: 2,
+
+  gravity_well_enabled: 1, well_x: 560, well_y: 260,
+  well_influence_radius: 150, well_core_radius: 30,
+  well_accel: 4200, well_max_speed: 900, well_radial_damping: 0,
 };
 
 const RAW_PARAM_SPECS = [
@@ -47,6 +51,14 @@ const RAW_PARAM_SPECS = [
   ["max_step_px",        1.0, 20.0, 0.5, v => v.toFixed(1)],
   ["show_debug",         0.0, 1.0, 1.0, v => v.toFixed(0)],
   ["world_wrap_mode",    1.0, 2.0, 1.0, v => v.toFixed(0)],
+  ["gravity_well_enabled", 0.0, 1.0, 1.0, v => v.toFixed(0)],
+  ["well_x",             0, 960, 5,   v => v.toFixed(0)],
+  ["well_y",             0, 540, 5,   v => v.toFixed(0)],
+  ["well_influence_radius", 20, 400, 5, v => v.toFixed(0)],
+  ["well_core_radius",   5, 100, 1,   v => v.toFixed(0)],
+  ["well_accel",         0, 12000, 50, v => v.toFixed(0)],
+  ["well_max_speed",     0, 2500, 25,  v => v.toFixed(0)],
+  ["well_radial_damping", 0, 10, 0.05, v => v.toFixed(2)],
 ];
 
 const CORE_PARAM_KEYS = [
@@ -55,6 +67,8 @@ const CORE_PARAM_KEYS = [
   "gravity_up", "gravity_down", "terminal_velocity", "fast_fall_multiplier",
   "jump_velocity", "jump_cut_multiplier", "coyote_time", "jump_buffer",
   "snap_to_ground", "max_step_px", "world_w", "world_wrap_mode",
+  "gravity_well_enabled", "well_x", "well_y", "well_influence_radius",
+  "well_core_radius", "well_accel", "well_max_speed", "well_radial_damping",
 ];
 
 function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
@@ -91,14 +105,20 @@ function decodeParamsFromHash() {
   } catch { return null; }
 }
 
+// Compact gravity-well test arrangement: a safe ground/start platform, open air to
+// swing through, and a destination platform placed well beyond normal jump
+// height/reach so it can only be reached by curving around the well and releasing
+// RUN at the right moment.
 function buildWorldRects(worldW, worldH) {
   const groundY = worldH - 60;
+  const destW = Math.floor(worldW * 0.156);
+  const destX = Math.floor(worldW * 0.792);
+  const destY = Math.floor(worldH * 0.278);
   return {
     groundY,
     platforms: [
       { x: 0, y: groundY, w: worldW, h: 60 },
-      { x: Math.floor(worldW * 0.5), y: groundY - 140, w: 186, h: 18 },
-      { x: Math.floor(worldW * 0.17), y: groundY - 240, w: 160, h: 18 },
+      { x: destX, y: destY, w: destW, h: 18 },
     ],
   };
 }
@@ -134,6 +154,7 @@ function buildWorldRects(worldW, worldH) {
   let jumpStartY = 0, peakY = 0, airTime = 0, lastJumpHeight = 0, lastAirTime = 0;
   let prevGrounded = false;
   let activePreset = "default";
+  let gravityCoreDeaths = 0;
 
   // Ghost trail: recent player positions
   const ghostTrail = [];
@@ -489,6 +510,44 @@ function buildWorldRects(worldW, worldH) {
     const pw = Math.round(params.player_w), ph = Math.round(params.player_h);
     const showDebug = params.show_debug >= 0.5;
 
+    const wellOn = params.gravity_well_enabled >= 0.5;
+    const pcx0 = st.x + pw * 0.5, pcy0 = st.y + ph * 0.5;
+    const distToWell = wellOn ? Math.hypot(params.well_x - pcx0, params.well_y - pcy0) : Infinity;
+
+    // Gravity well: influence radius, lethal core, active highlight
+    if (wellOn) {
+      const active = !!st.gravity_active;
+      ctx.beginPath();
+      ctx.arc(params.well_x, params.well_y, params.well_influence_radius, 0, Math.PI * 2);
+      ctx.fillStyle = active ? "rgba(90, 160, 230, 0.16)" : "rgba(90, 120, 160, 0.08)";
+      ctx.fill();
+      ctx.strokeStyle = active ? "rgba(140, 190, 240, 0.65)" : "rgba(90, 120, 160, 0.35)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(params.well_x, params.well_y, params.well_core_radius, 0, Math.PI * 2);
+      ctx.fillStyle = active ? "#e65a5a" : "#c84646";
+      ctx.fill();
+
+      // Predicted trajectory (approximate, host visualization only): the wasm
+      // Core.predict() clones state internally and steps the authoritative core
+      // forward — this never mutates live gameplay state.
+      if (distToWell < params.well_influence_radius && !st.grounded) {
+        const pts = core.predict(getBits(), 45);
+        if (pts.length >= 4) {
+          ctx.strokeStyle = "rgba(255, 230, 140, 0.6)";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(pts[0] + pw * 0.5, pts[1] + ph * 0.5);
+          for (let i = 2; i < pts.length; i += 2) {
+            ctx.lineTo(pts[i] + pw * 0.5, pts[i + 1] + ph * 0.5);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+
     // Ghost trail
     if (showDebug && ghostTrail.length > 1) {
       for (let i = 0; i < ghostTrail.length; i++) {
@@ -553,12 +612,14 @@ function buildWorldRects(worldW, worldH) {
 
     // HUD text
     if (showDebug) {
+      const speed = Math.hypot(st.vx, st.vy);
       hud.style.display = "block";
       hud.textContent =
         `x:${st.x.toFixed(1).padStart(7)} y:${st.y.toFixed(1).padStart(7)}\n` +
-        `vx:${st.vx.toFixed(1).padStart(7)} vy:${st.vy.toFixed(1).padStart(7)}\n` +
+        `vx:${st.vx.toFixed(1).padStart(7)} vy:${st.vy.toFixed(1).padStart(7)}  speed:${speed.toFixed(1)}\n` +
         `jump_h: ${lastJumpHeight.toFixed(1)} px  air_t: ${airTime.toFixed(3)} s\n` +
-        `grounded: ${!!st.grounded}  coyote: ${(st.coyote||0).toFixed(3)}  buffer: ${(st.jump_buffer||0).toFixed(3)}`;
+        `grounded: ${!!st.grounded}  coyote: ${(st.coyote||0).toFixed(3)}  buffer: ${(st.jump_buffer||0).toFixed(3)}\n` +
+        `RUN: gravity  active: ${!!st.gravity_active}  dist_to_well: ${wellOn ? distToWell.toFixed(1) : "n/a"}  core deaths: ${gravityCoreDeaths}`;
     } else {
       hud.style.display = "none";
     }
@@ -639,6 +700,12 @@ function buildWorldRects(worldW, worldH) {
       acc = Math.min(acc, 0.25);
       while (acc >= FIXED_DT) {
         st = core.step(getBits());
+        if (st.gravity_core_death) {
+          gravityCoreDeaths++;
+          applyCoreParams(); applyWorld(); respawn();
+          setStatus("Gravity well core: reset");
+          break;
+        }
         updateJumpMetrics();
         // Ghost trail
         ghostTrail.push({ x: st.x, y: st.y, grounded: !!st.grounded });
@@ -649,10 +716,16 @@ function buildWorldRects(worldW, worldH) {
       }
     } else if (stepOnce) {
       st = core.step(getBits());
-      updateJumpMetrics();
-      ghostTrail.push({ x: st.x, y: st.y, grounded: !!st.grounded });
-      if (ghostTrail.length > GHOST_MAX) ghostTrail.shift();
-      motionGraph.record(st);
+      if (st.gravity_core_death) {
+        gravityCoreDeaths++;
+        applyCoreParams(); applyWorld(); respawn();
+        setStatus("Gravity well core: reset");
+      } else {
+        updateJumpMetrics();
+        ghostTrail.push({ x: st.x, y: st.y, grounded: !!st.grounded });
+        if (ghostTrail.length > GHOST_MAX) ghostTrail.shift();
+        motionGraph.record(st);
+      }
       stepOnce = false;
     }
 

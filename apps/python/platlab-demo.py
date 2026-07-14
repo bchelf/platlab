@@ -22,6 +22,7 @@ Run:
 """
 
 import json
+import math
 import os
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
@@ -33,6 +34,7 @@ from core import (
     default_params,
     init_state,
     step as core_step,
+    clone_state,
     LEFT,
     RIGHT,
     DOWN,
@@ -92,6 +94,16 @@ FALLBACK_DEFAULT_PARAMS: Dict[str, float] = {
 
     # Wrap mode: 1=edge-wrap (legacy pygame), 2=center-wrap torus (legacy web)
     "world_wrap_mode": 1.0,
+
+    # Gravity well (proof-of-concept mechanic)
+    "gravity_well_enabled": 1.0,
+    "well_x": 560.0,
+    "well_y": 260.0,
+    "well_influence_radius": 150.0,
+    "well_core_radius": 30.0,
+    "well_accel": 4200.0,
+    "well_max_speed": 900.0,
+    "well_radial_damping": 0.0,
 }
 
 CONFIG_DEFAULT_PARAMS_PATH = os.path.abspath(
@@ -151,6 +163,15 @@ PARAM_SPECS: List[Tuple[str, float, float, float, str]] = [
     ("max_step_px", 1.0, 20.0, 0.5, "{:.1f}"),
 
     ("show_debug", 0.0, 1.0, 1.0, "{:.0f}"),
+
+    ("gravity_well_enabled", 0.0, 1.0, 1.0, "{:.0f}"),
+    ("well_x", 0.0, 960.0, 5.0, "{:.0f}"),
+    ("well_y", 0.0, 540.0, 5.0, "{:.0f}"),
+    ("well_influence_radius", 20.0, 400.0, 5.0, "{:.0f}"),
+    ("well_core_radius", 5.0, 100.0, 1.0, "{:.0f}"),
+    ("well_accel", 0.0, 12000.0, 50.0, "{:.0f}"),
+    ("well_max_speed", 0.0, 2500.0, 25.0, "{:.0f}"),
+    ("well_radial_damping", 0.0, 10.0, 0.05, "{:.2f}"),
 ]
 
 
@@ -247,6 +268,14 @@ CORE_PARAM_KEYS = [
     "max_step_px",
     "world_w",
     "world_wrap_mode",
+    "gravity_well_enabled",
+    "well_x",
+    "well_y",
+    "well_influence_radius",
+    "well_core_radius",
+    "well_accel",
+    "well_max_speed",
+    "well_radial_damping",
 ]
 
 
@@ -354,11 +383,17 @@ class Slider:
 # World
 # -----------------------------
 def build_world(world_w: int, world_h: int) -> Tuple[int, List[Rect], List[pygame.Rect]]:
+    # Compact gravity-well test arrangement: a safe ground/start platform, open air
+    # to swing through, and a destination platform placed well beyond normal jump
+    # height/reach so it can only be reached by curving around the well and
+    # releasing RUN at the right moment.
     ground_y = world_h - 60
+    dest_w = int(world_w * 0.156)
+    dest_x = int(world_w * 0.792)
+    dest_y = int(world_h * 0.278)
     rects = [
         (0, ground_y, world_w, 60),
-        (world_w // 2 - 140, ground_y - 140, 280, 18),
-        (120, ground_y - 240, 240, 18),
+        (dest_x, dest_y, dest_w, 18),
     ]
     world_core = [Rect(float(x), float(y), float(w), float(h)) for x, y, w, h in rects]
     world_draw = [pygame.Rect(x, y, w, h) for x, y, w, h in rects]
@@ -469,6 +504,7 @@ def main():
     step_once = False
     status = ""
     status_t = 0.0
+    gravity_core_deaths = 0
 
     # Fixed-step simulation accumulator for stability
     accumulator = 0.0
@@ -600,14 +636,22 @@ def main():
                 state.w = float(params["player_w"])
                 state.h = float(params["player_h"])
                 apply_params_to_core(core_params, params)
-                core_step(core_params, world_core, state, bits)
+                ev = core_step(core_params, world_core, state, bits)
+                if ev.gravity_core_death:
+                    gravity_core_deaths += 1
+                    state = respawn()
+                    status, status_t = "Gravity well core: reset", 1.2
                 accumulator -= sim_dt
         else:
             if step_once:
                 state.w = float(params["player_w"])
                 state.h = float(params["player_h"])
                 apply_params_to_core(core_params, params)
-                core_step(core_params, world_core, state, bits)
+                ev = core_step(core_params, world_core, state, bits)
+                if ev.gravity_core_death:
+                    gravity_core_deaths += 1
+                    state = respawn()
+                    status, status_t = "Gravity well core: reset", 1.2
                 step_once = False
 
         # Render
@@ -620,6 +664,40 @@ def main():
         for p in world_draw:
             pygame.draw.rect(screen, (80, 85, 95), p)
 
+        # Gravity well: core (lethal), influence radius, active highlight
+        well_on = params["gravity_well_enabled"] >= 0.5
+        well_cx, well_cy = params["well_x"], params["well_y"]
+        dist_to_well = math.hypot(
+            well_cx - (state.x + params["player_w"] * 0.5),
+            well_cy - (state.y + params["player_h"] * 0.5),
+        )
+        if well_on:
+            influence_color = (90, 160, 230, 60) if state.gravity_active else (90, 120, 160, 35)
+            influence_surf = pygame.Surface((world_w, world_h), pygame.SRCALPHA)
+            pygame.draw.circle(
+                influence_surf, influence_color, (int(well_cx), int(well_cy)),
+                int(params["well_influence_radius"]),
+            )
+            pygame.draw.circle(
+                influence_surf,
+                (140, 190, 240, 140) if state.gravity_active else (90, 120, 160, 90),
+                (int(well_cx), int(well_cy)), int(params["well_influence_radius"]), width=2,
+            )
+            screen.blit(influence_surf, (0, 0))
+            core_color = (230, 90, 90) if state.gravity_active else (200, 70, 70)
+            pygame.draw.circle(screen, core_color, (int(well_cx), int(well_cy)), int(params["well_core_radius"]))
+
+            # Predicted trajectory (approximate, host-visualization only): clone the
+            # live state and step the authoritative core forward, never mutating play.
+            if dist_to_well < params["well_influence_radius"] and not state.grounded:
+                preview = clone_state(state)
+                pts = []
+                for _ in range(45):
+                    core_step(core_params, world_core, preview, bits)
+                    pts.append((int(preview.x + params["player_w"] * 0.5), int(preview.y + params["player_h"] * 0.5)))
+                if len(pts) > 1:
+                    pygame.draw.lines(screen, (255, 230, 140), False, pts, 1)
+
         # Player
         pw = int(round(params["player_w"]))
         ph = int(round(params["player_h"]))
@@ -627,13 +705,23 @@ def main():
         player_color = (70, 200, 140) if state.grounded else (70, 140, 220)
         pygame.draw.rect(screen, player_color, player_rect, border_radius=6)
 
+        # Velocity vector (short line from player center)
+        pcx, pcy = state.x + pw * 0.5, state.y + ph * 0.5
+        v_scale = 0.08
+        pygame.draw.line(
+            screen, (255, 220, 100),
+            (pcx, pcy), (pcx + state.vx * v_scale, pcy + state.vy * v_scale), 2,
+        )
+
         # Debug HUD (left)
         if params["show_debug"] >= 0.5:
+            speed = math.hypot(state.vx, state.vy)
             lines = [
                 f"x: {state.x:8.2f}   y: {state.y:8.2f}",
-                f"vx: {state.vx:8.2f}   vy: {state.vy:8.2f}",
+                f"vx: {state.vx:8.2f}   vy: {state.vy:8.2f}   speed: {speed:7.1f}",
                 f"grounded: {bool(state.grounded)}   coyote: {state.coyote:0.3f}   buffer: {state.jump_buffer:0.3f}",
-                "A/D move, K run, L jump, S fast-fall | F1 toggle HUD | Esc quit",
+                f"RUN: gravity   active: {bool(state.gravity_active)}   dist_to_well: {dist_to_well:7.1f}   core deaths: {gravity_core_deaths}",
+                "A/D move, K run(gravity well), L jump, S fast-fall | F1 toggle HUD | Esc quit",
             ]
             y0 = 10
             for ln in lines:

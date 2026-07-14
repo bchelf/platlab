@@ -53,6 +53,17 @@ pub struct Params {
     pub world_w: f32,
     // 0 = off, 1 = edge-wrap (pygame legacy), 2 = center-wrap torus (web legacy)
     pub world_wrap_mode: f32,
+
+    // Gravity well (proof-of-concept mechanic; 0 = off, 1 = on)
+    pub gravity_well_enabled: f32,
+    pub well_x: f32,
+    pub well_y: f32,
+    pub well_influence_radius: f32,
+    pub well_core_radius: f32,
+    pub well_accel: f32,
+    pub well_max_speed: f32,
+    // Optional radial velocity damping applied while attracted. Default 0 (off).
+    pub well_radial_damping: f32,
 }
 
 impl Default for Params {
@@ -84,6 +95,16 @@ impl Default for Params {
 
             world_w: 960.0,
             world_wrap_mode: 1.0,
+
+            // Off by default; hosts opt in and position the well for their scene.
+            gravity_well_enabled: 0.0,
+            well_x: 480.0,
+            well_y: 300.0,
+            well_influence_radius: 220.0,
+            well_core_radius: 34.0,
+            well_accel: 2600.0,
+            well_max_speed: 900.0,
+            well_radial_damping: 0.0,
         }
     }
 }
@@ -113,6 +134,13 @@ pub struct State {
     pub coyote: f32,
     pub jump_buffer: f32,
     pub jump_was_down: u8,
+
+    // 1 while the gravity well is actively pulling this frame (readback for host rendering).
+    pub gravity_active: u8,
+    // Internal: 1 once the well has boosted this airborne flight, until landing.
+    // Exempts the ordinary air-speed cap from clamping away well-gained momentum
+    // (see the horizontal-movement clamp in `step`).
+    pub well_boosted: u8,
 }
 
 #[repr(C)]
@@ -121,6 +149,7 @@ pub struct Events {
     pub jumped: u8,
     pub landed: u8,
     pub bonked: u8,
+    pub gravity_core_death: u8,
 }
 
 #[inline]
@@ -183,6 +212,10 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
     s.jump_was_down = if jump { 1 } else { 0 };
 
     let was_grounded = s.grounded != 0;
+    if was_grounded {
+        // Landing clears the exemption; ordinary caps resume applying on the ground.
+        s.well_boosted = 0;
+    }
 
     // Coyote timer
     if was_grounded {
@@ -234,7 +267,13 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
         else { s.vx -= sign(s.vx) * drag; }
     }
 
-    s.vx = clamp(s.vx, -max_speed, max_speed);
+    // Skip the ordinary cap only while this airborne flight has been boosted by the
+    // gravity well (see below); this is a no-op for all ordinary play, since input
+    // alone can never push vx past max_speed. Without this, the cap would instantly
+    // erase slingshot velocity the tick after the well imparts it.
+    if s.well_boosted == 0 {
+        s.vx = clamp(s.vx, -max_speed, max_speed);
+    }
 
     // Gravity
     let g = if s.vy < 0.0 { params.gravity_up } else { params.gravity_down };
@@ -260,6 +299,64 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
     if jump_released && s.vy < 0.0 {
         let cut_vy = -params.jump_velocity * params.jump_cut_multiplier;
         if s.vy < cut_vy { s.vy = cut_vy; }
+    }
+
+    // Gravity well: a deliberately game-like radial pull, active only while
+    // airborne and holding RUN inside the influence ring. It only nudges
+    // vx/vy (never overwrites them), so releasing RUN preserves momentum.
+    // Applied after normal air control/gravity but before integration, so
+    // the ordinary air_max_speed clamp (already applied above) cannot erase
+    // the boosted velocity.
+    s.gravity_active = 0;
+    if params.gravity_well_enabled >= 0.5 {
+        let pcx = s.x + s.w * 0.5;
+        let pcy = s.y + s.h * 0.5;
+        let wdx = params.well_x - pcx;
+        let wdy = params.well_y - pcy;
+        let dist = (wdx * wdx + wdy * wdy).sqrt();
+        let core_r = params.well_core_radius.max(0.0);
+
+        if dist <= core_r {
+            ev.gravity_core_death = 1;
+        } else {
+            let influence = params.well_influence_radius.max(core_r + 1.0);
+            if !was_grounded && run && dist < influence {
+                // smoothstep(0,1, 1 - dist/influence): 0 at the boundary, 1 at the core,
+                // no discontinuity at dist == influence.
+                let t = clamp(1.0 - dist / influence, 0.0, 1.0);
+                let strength = t * t * (3.0 - 2.0 * t);
+                let inv_dist = 1.0 / dist; // dist > core_r >= 0 here, so this stays finite
+                let nx = wdx * inv_dist;
+                let ny = wdy * inv_dist;
+
+                s.vx += nx * params.well_accel * strength * DT;
+                s.vy += ny * params.well_accel * strength * DT;
+
+                if params.well_radial_damping > 0.0 {
+                    let radial = s.vx * nx + s.vy * ny;
+                    if radial > 0.0 {
+                        let damp = (radial * params.well_radial_damping * DT).min(radial);
+                        s.vx -= nx * damp;
+                        s.vy -= ny * damp;
+                    }
+                }
+
+                // Gravity-assisted speed cap: only clamps while actively attracted,
+                // so a slingshot released above this speed keeps its exit velocity.
+                let cap = params.well_max_speed.max(0.0);
+                if cap > 0.0 {
+                    let speed = (s.vx * s.vx + s.vy * s.vy).sqrt();
+                    if speed > cap {
+                        let scale = cap / speed;
+                        s.vx *= scale;
+                        s.vy *= scale;
+                    }
+                }
+
+                s.gravity_active = 1;
+                s.well_boosted = 1;
+            }
+        }
     }
 
     // Integrate with substeps + collisions
@@ -346,7 +443,7 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{step, Buttons, Params, Rect, State};
+    use super::{step, Buttons, Params, Rect, State, DT};
 
     fn approx_eq(a: f32, b: f32) {
         let eps = 1e-4;
@@ -422,5 +519,203 @@ mod tests {
         assert_eq!(landed, 2);
         assert_eq!(bonked, 0);
         assert_eq!(trace_hash, 0x94db7b2925cfad14);
+    }
+
+    // ── Gravity well ────────────────────────────────────────────────
+
+    fn well_params() -> Params {
+        let mut p = Params::default();
+        p.air_drag = 0.0;
+        p.gravity_well_enabled = 1.0;
+        p.well_x = 500.0;
+        p.well_y = 300.0;
+        p.well_influence_radius = 150.0;
+        p.well_core_radius = 20.0;
+        p.well_accel = 3000.0;
+        p.well_max_speed = 100_000.0; // effectively uncapped for these unit tests
+        p.well_radial_damping = 0.0;
+        p
+    }
+
+    fn airborne_state(x: f32, y: f32) -> State {
+        State {
+            x,
+            y,
+            w: 28.0,
+            h: 44.0,
+            grounded: 0,
+            ..State::default()
+        }
+    }
+
+    #[test]
+    fn no_gravity_force_outside_influence_radius() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Player center is far outside the 150px influence radius.
+        let mut state = airborne_state(0.0, 0.0);
+
+        let ev = step(&params, &world, &mut state, Buttons::RUN);
+
+        assert_eq!(state.gravity_active, 0);
+        assert_eq!(ev.gravity_core_death, 0);
+        approx_eq(state.vx, 0.0);
+        approx_eq(state.vy, params.gravity_down * DT);
+    }
+
+    #[test]
+    fn no_gravity_force_when_run_not_held() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Player center is inside the influence radius (distance ~50px) but RUN is not held.
+        let mut state = airborne_state(500.0 - 14.0 - 50.0, 300.0 - 22.0);
+
+        let ev = step(&params, &world, &mut state, Buttons::empty());
+
+        assert_eq!(state.gravity_active, 0);
+        assert_eq!(ev.gravity_core_death, 0);
+        approx_eq(state.vx, 0.0);
+        approx_eq(state.vy, params.gravity_down * DT);
+    }
+
+    #[test]
+    fn attraction_bends_velocity_toward_well_when_active() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Player center 100px directly "left" of the well (well is at +x from player).
+        let mut state = airborne_state(500.0 - 14.0 - 100.0, 300.0 - 22.0);
+
+        let ev = step(&params, &world, &mut state, Buttons::RUN);
+
+        assert_eq!(state.gravity_active, 1);
+        assert_eq!(ev.gravity_core_death, 0);
+        // Pulled toward +x (toward the well), well beyond what gravity alone would cause.
+        assert!(
+            state.vx > 10.0,
+            "expected vx pulled toward well, got {}",
+            state.vx
+        );
+    }
+
+    #[test]
+    fn releasing_run_preserves_velocity_except_normal_forces() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Purely horizontal offset from the well so attraction never touches vy.
+        let mut state = airborne_state(500.0 - 14.0 - 80.0, 300.0 - 22.0);
+
+        // Hold RUN for a while to build up well-boosted velocity comfortably past the cap.
+        for _ in 0..20 {
+            step(&params, &world, &mut state, Buttons::RUN);
+        }
+        assert_eq!(state.gravity_active, 1);
+        let vx_boosted = state.vx;
+        let vy_boosted = state.vy;
+        assert!(
+            vx_boosted > params.air_max_speed,
+            "well should exceed the ordinary air cap"
+        );
+
+        // Release RUN: no horizontal input at all, so vx must be untouched by the
+        // ordinary air-speed clamp. vy only changes by the normal gravity term.
+        let ev = step(&params, &world, &mut state, Buttons::empty());
+
+        assert_eq!(state.gravity_active, 0);
+        assert_eq!(ev.gravity_core_death, 0);
+        approx_eq(state.vx, vx_boosted);
+        let g = if vy_boosted < 0.0 {
+            params.gravity_up
+        } else {
+            params.gravity_down
+        };
+        approx_eq(state.vy, vy_boosted + g * DT);
+    }
+
+    #[test]
+    fn force_remains_finite_near_core_boundary() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Just outside the lethal core boundary.
+        let mut state =
+            airborne_state(500.0 - 14.0 - (params.well_core_radius + 0.5), 300.0 - 22.0);
+
+        let ev = step(&params, &world, &mut state, Buttons::RUN);
+
+        assert_eq!(ev.gravity_core_death, 0);
+        assert!(state.vx.is_finite());
+        assert!(state.vy.is_finite());
+        assert!(state.vx.abs() < params.well_max_speed + 1.0);
+        assert!(state.vy.abs() < params.well_max_speed + 1.0);
+    }
+
+    #[test]
+    fn entering_lethal_core_triggers_death_event() {
+        let params = well_params();
+        let world: [Rect; 0] = [];
+        // Player center exactly at the well center, well inside the core radius.
+        let mut state = airborne_state(500.0 - 14.0, 300.0 - 22.0);
+
+        let ev = step(&params, &world, &mut state, Buttons::RUN);
+
+        assert_eq!(ev.gravity_core_death, 1);
+    }
+
+    #[test]
+    fn deterministic_gravity_well_input_sequence_hash() {
+        let mut params = well_params();
+        params.world_w = 960.0;
+
+        let world = [Rect {
+            x: 0.0,
+            y: 480.0,
+            w: 960.0,
+            h: 60.0,
+        }];
+
+        let mut state = State {
+            x: 80.0,
+            y: 480.0 - 44.0,
+            w: 28.0,
+            h: 44.0,
+            ..State::default()
+        };
+
+        let mut trace_hash = 0xcbf29ce484222325u64;
+        let mut deaths = 0u32;
+
+        for frame in 0..240 {
+            let mut buttons = Buttons::empty();
+            if frame < 200 {
+                buttons |= Buttons::RIGHT;
+            }
+            if frame == 20 {
+                buttons |= Buttons::JUMP;
+            }
+            // Hold RUN (gravity-well activation) through the middle of the arc,
+            // then release to test the slingshot exit.
+            if frame >= 30 && frame < 90 {
+                buttons |= Buttons::RUN;
+            }
+
+            let ev = step(&params, &world, &mut state, buttons);
+            deaths += ev.gravity_core_death as u32;
+
+            for value in [
+                state.x.round() as i64,
+                state.y.round() as i64,
+                state.vx.round() as i64,
+                state.vy.round() as i64,
+                state.grounded as i64,
+                state.gravity_active as i64,
+            ] {
+                for b in value.to_le_bytes() {
+                    trace_hash ^= b as u64;
+                    trace_hash = trace_hash.wrapping_mul(0x100000001b3);
+                }
+            }
+        }
+
+        assert_eq!(deaths, 0);
+        assert_eq!(trace_hash, 0x3a9413858565ea88);
     }
 }

@@ -44,6 +44,14 @@ class Params(C.Structure):
         ("max_step_px", C.c_float),
         ("world_w", C.c_float),
         ("world_wrap_mode", C.c_float),
+        ("gravity_well_enabled", C.c_float),
+        ("well_x", C.c_float),
+        ("well_y", C.c_float),
+        ("well_influence_radius", C.c_float),
+        ("well_core_radius", C.c_float),
+        ("well_accel", C.c_float),
+        ("well_max_speed", C.c_float),
+        ("well_radial_damping", C.c_float),
     ]
 
 class State(C.Structure):
@@ -55,10 +63,17 @@ class State(C.Structure):
         ("coyote", C.c_float),
         ("jump_buffer", C.c_float),
         ("jump_was_down", C.c_ubyte),
+        ("gravity_active", C.c_ubyte),
+        ("well_boosted", C.c_ubyte),
     ]
 
 class Events(C.Structure):
-    _fields_ = [("jumped", C.c_ubyte), ("landed", C.c_ubyte), ("bonked", C.c_ubyte)]
+    _fields_ = [
+        ("jumped", C.c_ubyte),
+        ("landed", C.c_ubyte),
+        ("bonked", C.c_ubyte),
+        ("gravity_core_death", C.c_ubyte),
+    ]
 
 # Input bits must match Rust Buttons
 LEFT  = 1 << 0
@@ -91,3 +106,7 @@ def init_state(x: float, y: float, w: float, h: float) -> State:
 def step(p: Params, world: list[Rect], s: State, input_bits: int) -> Events:
     arr = (Rect * len(world))(*world)
     return lib.core_step(C.byref(p), arr, len(world), C.byref(s), input_bits)
+
+def clone_state(s: State) -> State:
+    """Byte-copy a State so it can be stepped forward without touching the live one."""
+    return State.from_buffer_copy(s)
