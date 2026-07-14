@@ -22,7 +22,7 @@ let DEFAULT_PARAMS = {
 
   gravity_well_enabled: 1, well_x: 560, well_y: 260,
   well_influence_radius: 150, well_core_radius: 30,
-  well_accel: 4200, well_max_speed: 900, well_radial_damping: 0,
+  well_accel: 4200, well_max_speed: 900, well_radial_damping: 0, well_swirl_deg: 60,
 };
 
 const RAW_PARAM_SPECS = [
@@ -59,6 +59,7 @@ const RAW_PARAM_SPECS = [
   ["well_accel",         0, 12000, 50, v => v.toFixed(0)],
   ["well_max_speed",     0, 2500, 25,  v => v.toFixed(0)],
   ["well_radial_damping", 0, 10, 0.05, v => v.toFixed(2)],
+  ["well_swirl_deg",      0, 89, 1,    v => v.toFixed(0)],
 ];
 
 const CORE_PARAM_KEYS = [
@@ -69,6 +70,7 @@ const CORE_PARAM_KEYS = [
   "snap_to_ground", "max_step_px", "world_w", "world_wrap_mode",
   "gravity_well_enabled", "well_x", "well_y", "well_influence_radius",
   "well_core_radius", "well_accel", "well_max_speed", "well_radial_damping",
+  "well_swirl_deg",
 ];
 
 function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }

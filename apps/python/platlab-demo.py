@@ -104,6 +104,7 @@ FALLBACK_DEFAULT_PARAMS: Dict[str, float] = {
     "well_accel": 4200.0,
     "well_max_speed": 900.0,
     "well_radial_damping": 0.0,
+    "well_swirl_deg": 60.0,
 }
 
 CONFIG_DEFAULT_PARAMS_PATH = os.path.abspath(
@@ -172,6 +173,7 @@ PARAM_SPECS: List[Tuple[str, float, float, float, str]] = [
     ("well_accel", 0.0, 12000.0, 50.0, "{:.0f}"),
     ("well_max_speed", 0.0, 2500.0, 25.0, "{:.0f}"),
     ("well_radial_damping", 0.0, 10.0, 0.05, "{:.2f}"),
+    ("well_swirl_deg", 0.0, 89.0, 1.0, "{:.0f}"),
 ]
 
 
@@ -276,6 +278,7 @@ CORE_PARAM_KEYS = [
     "well_accel",
     "well_max_speed",
     "well_radial_damping",
+    "well_swirl_deg",
 ]
 
 

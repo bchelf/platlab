@@ -126,6 +126,7 @@ fn parse_params(src: &str) -> Params {
         well_accel: number(p, "well_accel", Some(2600.0)),
         well_max_speed: number(p, "well_max_speed", Some(900.0)),
         well_radial_damping: number(p, "well_radial_damping", Some(0.0)),
+        well_swirl_deg: number(p, "well_swirl_deg", Some(60.0)),
     }
 }
 

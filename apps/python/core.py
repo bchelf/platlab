@@ -52,6 +52,7 @@ class Params(C.Structure):
         ("well_accel", C.c_float),
         ("well_max_speed", C.c_float),
         ("well_radial_damping", C.c_float),
+        ("well_swirl_deg", C.c_float),
     ]
 
 class State(C.Structure):

@@ -29,6 +29,7 @@
   "well_influence_radius": 150.0,
   "well_max_speed": 900.0,
   "well_radial_damping": 0.0,
+  "well_swirl_deg": 60.0,
   "well_x": 560.0,
   "well_y": 260.0,
   "world_h": 540.0,

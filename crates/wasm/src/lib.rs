@@ -87,6 +87,7 @@ impl Core {
             setf!("well_accel", well_accel);
             setf!("well_max_speed", well_max_speed);
             setf!("well_radial_damping", well_radial_damping);
+            setf!("well_swirl_deg", well_swirl_deg);
         }
     }
 

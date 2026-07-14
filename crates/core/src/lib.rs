@@ -64,6 +64,12 @@ pub struct Params {
     pub well_max_speed: f32,
     // Optional radial velocity damping applied while attracted. Default 0 (off).
     pub well_radial_damping: f32,
+    // Degrees to rotate the pull vector away from straight-at-the-center and
+    // toward tangential (perpendicular to the radius). 0 = pure pull toward
+    // the well (old behavior); 90 = pure sideways push. The rotation direction
+    // follows whichever way the player's current velocity is already curving
+    // around the well, so it amplifies a natural loop instead of forcing one.
+    pub well_swirl_deg: f32,
 }
 
 impl Default for Params {
@@ -105,6 +111,7 @@ impl Default for Params {
             well_accel: 2600.0,
             well_max_speed: 900.0,
             well_radial_damping: 0.0,
+            well_swirl_deg: 60.0,
         }
     }
 }
@@ -329,8 +336,21 @@ pub fn step(params: &Params, world: &[Rect], s: &mut State, buttons: Buttons) ->
                 let nx = wdx * inv_dist;
                 let ny = wdy * inv_dist;
 
-                s.vx += nx * params.well_accel * strength * DT;
-                s.vy += ny * params.well_accel * strength * DT;
+                // Rotate the pull vector away from straight-at-the-center and toward
+                // tangential, so entering the field curves you around it instead of
+                // just yanking you toward it. The rotation direction follows the sign
+                // of the player's current tangential velocity relative to the well
+                // (i.e. which way they're already swinging), so it reinforces a
+                // natural loop rather than imposing an arbitrary fixed spin.
+                let tangent_vel = -s.vx * ny + s.vy * nx;
+                let swirl_sign = if tangent_vel < 0.0 { -1.0 } else { 1.0 };
+                let theta = swirl_sign * params.well_swirl_deg.to_radians();
+                let (sin_t, cos_t) = theta.sin_cos();
+                let pull_x = nx * cos_t - ny * sin_t;
+                let pull_y = nx * sin_t + ny * cos_t;
+
+                s.vx += pull_x * params.well_accel * strength * DT;
+                s.vy += pull_y * params.well_accel * strength * DT;
 
                 if params.well_radial_damping > 0.0 {
                     let radial = s.vx * nx + s.vy * ny;
@@ -589,11 +609,19 @@ mod tests {
 
         assert_eq!(state.gravity_active, 1);
         assert_eq!(ev.gravity_core_death, 0);
-        // Pulled toward +x (toward the well), well beyond what gravity alone would cause.
+        // Pulled toward +x (toward the well): vx increases.
         assert!(
-            state.vx > 10.0,
+            state.vx > 1.0,
             "expected vx pulled toward well, got {}",
             state.vx
+        );
+        // The pull is rotated toward tangential (see well_swirl_deg), so even a purely
+        // horizontal approach picks up a vertical component instead of a straight-line
+        // yank toward the center.
+        assert!(
+            state.vy.abs() > 1.0,
+            "expected the swirl to add a tangential (vertical) component, got {}",
+            state.vy
         );
     }
 
@@ -601,19 +629,28 @@ mod tests {
     fn releasing_run_preserves_velocity_except_normal_forces() {
         let params = well_params();
         let world: [Rect; 0] = [];
-        // Purely horizontal offset from the well so attraction never touches vy.
-        let mut state = airborne_state(500.0 - 14.0 - 80.0, 300.0 - 22.0);
+        let mut state = airborne_state(500.0 - 14.0 - 60.0, 300.0 - 22.0);
 
-        // Hold RUN for a while to build up well-boosted velocity comfortably past the cap.
-        for _ in 0..20 {
-            step(&params, &world, &mut state, Buttons::RUN);
+        // Hold RUN until the well pushes vx past the ordinary air cap. The swirl now
+        // curves the approach (rather than a straight line to the center), so capture
+        // the first qualifying frame instead of assuming a fixed frame count still has
+        // the player inside the influence ring.
+        let mut vx_boosted = 0.0;
+        let mut vy_boosted = 0.0;
+        let mut boosted = false;
+        for _ in 0..60 {
+            let ev = step(&params, &world, &mut state, Buttons::RUN);
+            assert_eq!(ev.gravity_core_death, 0);
+            if state.gravity_active == 1 && state.vx > params.air_max_speed {
+                vx_boosted = state.vx;
+                vy_boosted = state.vy;
+                boosted = true;
+                break;
+            }
         }
-        assert_eq!(state.gravity_active, 1);
-        let vx_boosted = state.vx;
-        let vy_boosted = state.vy;
         assert!(
-            vx_boosted > params.air_max_speed,
-            "well should exceed the ordinary air cap"
+            boosted,
+            "expected the well to push vx past the ordinary air cap"
         );
 
         // Release RUN: no horizontal input at all, so vx must be untouched by the
@@ -664,6 +701,13 @@ mod tests {
     fn deterministic_gravity_well_input_sequence_hash() {
         let mut params = well_params();
         params.world_w = 960.0;
+        // Positioned right along this jump's natural apex/path so RUN actually
+        // engages the well (verified below via `any_active`), instead of a well
+        // placed somewhere the trace never reaches.
+        params.well_x = 200.0;
+        params.well_y = 400.0;
+        params.well_influence_radius = 120.0;
+        params.well_core_radius = 15.0;
 
         let world = [Rect {
             x: 0.0,
@@ -682,23 +726,23 @@ mod tests {
 
         let mut trace_hash = 0xcbf29ce484222325u64;
         let mut deaths = 0u32;
+        let mut any_active = false;
 
-        for frame in 0..240 {
-            let mut buttons = Buttons::empty();
-            if frame < 200 {
-                buttons |= Buttons::RIGHT;
-            }
-            if frame == 20 {
+        for frame in 0..80 {
+            let mut buttons = Buttons::RIGHT;
+            if frame == 10 {
                 buttons |= Buttons::JUMP;
             }
-            // Hold RUN (gravity-well activation) through the middle of the arc,
-            // then release to test the slingshot exit.
-            if frame >= 30 && frame < 90 {
+            // Hold RUN (gravity-well activation) while airborne and passing
+            // through the well's influence ring, then release mid-arc to test
+            // the slingshot exit.
+            if (12..26).contains(&frame) {
                 buttons |= Buttons::RUN;
             }
 
             let ev = step(&params, &world, &mut state, buttons);
             deaths += ev.gravity_core_death as u32;
+            any_active |= state.gravity_active != 0;
 
             for value in [
                 state.x.round() as i64,
@@ -716,6 +760,10 @@ mod tests {
         }
 
         assert_eq!(deaths, 0);
-        assert_eq!(trace_hash, 0x3a9413858565ea88);
+        assert!(
+            any_active,
+            "expected the well to actually engage during this trace"
+        );
+        assert_eq!(trace_hash, 0x86997869f631b459);
     }
 }
